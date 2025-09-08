@@ -1,12 +1,22 @@
-# insert.py
+# database/insertion.py
 import os
 from dotenv import load_dotenv
 import psycopg
+from psycopg.types.json import Json
 
 load_dotenv()
 conninfo = os.environ["DATABASE_URL"]
 
-def insert_log(log: dict):
+def insert_log(log: dict) -> int:
+    """
+    Inserts a log record into the database.
+    
+    Args:
+        log: A flattened dictionary matching the database columns.
+             
+    Returns:
+        The ID of the newly inserted log record.
+    """
     with psycopg.connect(conninfo) as conn:
         with conn.cursor() as cur:
             cur.execute("""
@@ -21,24 +31,7 @@ def insert_log(log: dict):
                   %(attack_type)s, %(attack_confidence)s, %(labels)s, %(message)s, %(raw)s
                 ) RETURNING id;
             """, {
-                "timestamp": log.get("timestamp"),  # can be None for default
-                "source_ip": log.get("source_ip"),
-                "source_port": log.get("source_port"),
-                "username": log.get("username"),
-                "host": log.get("host"),
-                "outcome": log.get("outcome"),
-                "severity": log.get("severity"),
-                "category": log.get("category"),
-                "action": log.get("action"),
-                "reason": log.get("reason"),
-                "http_method": log.get("http_method"),
-                "http_status": log.get("http_status"),
-                "url_path": log.get("url_path"),
-                "user_agent": log.get("user_agent"),
-                "attack_type": log.get("attack_type"),
-                "attack_confidence": log.get("attack_confidence"),
-                "labels": log.get("labels"),
-                "message": log.get("message"),
-                "raw": psycopg.types.json.Json(log.get("raw") or log)
+                **log,  # This unpacks all key-value pairs from the log dictionary
+                "raw": Json(log.get("raw")) # Ensure 'raw' is serialized as JSON
             })
             return cur.fetchone()[0]

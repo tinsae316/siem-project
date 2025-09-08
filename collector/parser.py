@@ -1,6 +1,20 @@
-# collector/parser.py
 import re
+import json
+from collector.schemas import LogSchema
+from pydantic import ValidationError
 from collector.utils import utc_now_iso, geo_lookup, resolve_hostname
+
+def parse_json_log(line: str):
+    """
+    Parse a JSON formatted log line.
+    """
+    try:
+        log_data = json.loads(line)
+        validated_log = LogSchema.parse_obj(log_data)
+        return validated_log.dict()
+    except (json.JSONDecodeError, ValidationError) as e:
+        print(f"[!] JSON parsing or validation failed: {e}")
+        return None
 
 def parse_ssh_auth_log(line: str):
     """
@@ -21,7 +35,6 @@ def parse_ssh_auth_log(line: str):
             "message": line.strip()
         }
     return None
-
 
 def parse_web_access_log(line: str):
     """
@@ -46,12 +59,11 @@ def parse_web_access_log(line: str):
         }
     return None
 
-
 def parse_log_line(line: str):
     """
     Main entry point: tries multiple parsers in order
     """
-    parsers = [parse_ssh_auth_log, parse_web_access_log]
+    parsers = [parse_json_log, parse_ssh_auth_log, parse_web_access_log]
     for parser in parsers:
         result = parser(line)
         if result:
