@@ -1,7 +1,0 @@
-fastapi
-uvicorn[standard]
-asyncpg
-watchdog
-pydantic
-python-dotenv
-geoip2
