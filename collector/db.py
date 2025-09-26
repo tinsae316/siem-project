@@ -48,7 +48,10 @@ async def init_db():
                         attack_confidence TEXT,
                         labels TEXT[],
                         message TEXT,
-                        raw JSONB
+                        raw JSONB,
+                        destination_ip INET,
+                        destination_port INT,
+                        protocol TEXT
                     )
                 """)
         
@@ -77,12 +80,12 @@ async def insert_log(pool, log: dict):
                         timestamp, source_ip, source_port, username, host,
                         outcome, severity, category, action, reason,
                         http_method, http_status, url_path, user_agent,
-                        attack_type, attack_confidence, labels, message, raw
+                        attack_type, attack_confidence, labels, message, raw, destination_ip, destination_port, protocol
                     ) VALUES (
                         %(timestamp)s, %(source_ip)s, %(source_port)s, %(username)s, %(host)s,
                         %(outcome)s, %(severity)s, %(category)s, %(action)s, %(reason)s,
                         %(http_method)s, %(http_status)s, %(url_path)s, %(user_agent)s,
-                        %(attack_type)s, %(attack_confidence)s, %(labels)s, %(message)s, %(raw)s
+                        %(attack_type)s, %(attack_confidence)s, %(labels)s, %(message)s, %(raw)s, %(destination_ip)s, %(destination_port)s, %(protocol)s
                     )
                     """,
                     {
@@ -104,7 +107,11 @@ async def insert_log(pool, log: dict):
                         "attack_confidence": safe_get(log, 'attack', 'confidence'),
                         "labels": log.get('labels'),
                         "message": log.get('message'),
-                        "raw": Json(log)
+                        "raw": Json(log),
+                        "destination_ip": safe_get(log, 'destination', 'ip'),
+                        "destination_port": safe_get(log, 'destination', 'port'),
+                        "protocol": safe_get(log, 'network', 'transport'),
+
                     }
                 )
         print("[*] Log successfully inserted into the database.")
