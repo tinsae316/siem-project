@@ -68,8 +68,15 @@ async def insert_log(pool, log: dict):
         return
 
     try:
+        # Remove any manually provided ID to prevent conflicts
+        # The database will auto-generate the ID
+        log_data = log.copy()
+        if 'id' in log_data:
+            print(f"[*] Removing manual ID {log_data['id']} to prevent conflicts - using auto-generated ID")
+            del log_data['id']
+        
         # Convert the timestamp string to a datetime object
-        log_timestamp_str = log.get('timestamp')
+        log_timestamp_str = log_data.get('timestamp')
         log_timestamp = datetime.fromisoformat(log_timestamp_str) if log_timestamp_str else None
 
         async with pool.connection() as conn:
@@ -90,31 +97,31 @@ async def insert_log(pool, log: dict):
                     """,
                     {
                         "timestamp": log_timestamp,
-                        "source_ip": safe_get(log, 'source', 'ip'),
-                        "source_port": safe_get(log, 'source', 'port'),
-                        "username": safe_get(log, 'user', 'name'),
-                        "host": safe_get(log, 'host', 'hostname'),
-                        "outcome": safe_get(log, 'event', 'outcome'),
-                        "severity": safe_get(log, 'event', 'severity'),
-                        "category": safe_get(log, 'event', 'category'),
-                        "action": safe_get(log, 'event', 'action'),
-                        "reason": safe_get(log, 'event', 'reason'),
-                        "http_method": safe_get(log, 'http', 'request', 'method'),
-                        "http_status": safe_get(log, 'http', 'response', 'status_code'),
-                        "url_path": safe_get(log, 'url', 'path'),
-                        "user_agent": safe_get(log, 'user_agent', 'original'),
-                        "attack_type": safe_get(log, 'attack', 'technique'),
-                        "attack_confidence": safe_get(log, 'attack', 'confidence'),
-                        "labels": log.get('labels'),
-                        "message": log.get('message'),
-                        "raw": Json(log),
-                        "destination_ip": safe_get(log, 'destination', 'ip'),
-                        "destination_port": safe_get(log, 'destination', 'port'),
-                        "protocol": safe_get(log, 'network', 'transport'),
+                        "source_ip": safe_get(log_data, 'source', 'ip'),
+                        "source_port": safe_get(log_data, 'source', 'port'),
+                        "username": safe_get(log_data, 'user', 'name'),
+                        "host": safe_get(log_data, 'host', 'hostname'),
+                        "outcome": safe_get(log_data, 'event', 'outcome'),
+                        "severity": safe_get(log_data, 'event', 'severity'),
+                        "category": safe_get(log_data, 'event', 'category'),
+                        "action": safe_get(log_data, 'event', 'action'),
+                        "reason": safe_get(log_data, 'event', 'reason'),
+                        "http_method": safe_get(log_data, 'http', 'request', 'method'),
+                        "http_status": safe_get(log_data, 'http', 'response', 'status_code'),
+                        "url_path": safe_get(log_data, 'url', 'path'),
+                        "user_agent": safe_get(log_data, 'user_agent', 'original'),
+                        "attack_type": safe_get(log_data, 'attack', 'technique'),
+                        "attack_confidence": safe_get(log_data, 'attack', 'confidence'),
+                        "labels": log_data.get('labels'),
+                        "message": log_data.get('message'),
+                        "raw": Json(log_data),
+                        "destination_ip": safe_get(log_data, 'destination', 'ip'),
+                        "destination_port": safe_get(log_data, 'destination', 'port'),
+                        "protocol": safe_get(log_data, 'network', 'transport'),
 
                     }
                 )
         print("[*] Log successfully inserted into the database.")
     except Exception as e:
         print(f"[!] Error inserting log into database: {e}")
-        print(f"Failed log data: {log}")
+        print(f"Failed log data: {log_data}")
