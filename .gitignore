@@ -19,3 +19,4 @@ venv/
 
 .vscode/
 /lib/generated/prisma
+./next
