@@ -23,12 +23,13 @@ def insert_log(log: dict) -> int:
                 INSERT INTO logs (
                   timestamp, source_ip, source_port, username, host, outcome, severity,
                   category, action, reason, http_method, http_status, url_path, user_agent,
-                  attack_type, attack_confidence, labels, message, raw
+                  attack_type, attack_confidence, labels, message, raw, destination_ip, destination_port, protocol
                 ) VALUES (
                   %(timestamp)s, %(source_ip)s, %(source_port)s, %(username)s, %(host)s,
                   %(outcome)s, %(severity)s, %(category)s, %(action)s, %(reason)s,
                   %(http_method)s, %(http_status)s, %(url_path)s, %(user_agent)s,
-                  %(attack_type)s, %(attack_confidence)s, %(labels)s, %(message)s, %(raw)s
+                  %(attack_type)s, %(attack_confidence)s, %(labels)s, %(message)s, %(raw)s,
+                  %(destination_ip)s, %(destination_port)s, %(protocol)s
                 ) RETURNING id;
             """, {
                 **log,  # This unpacks all key-value pairs from the log dictionary

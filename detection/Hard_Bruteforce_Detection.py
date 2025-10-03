@@ -1,8 +1,14 @@
-# detection/Brute_detect.py
+# detection/Hard_Bruteforce_Detection.py
 import asyncio
 import datetime
 from collections import defaultdict
 from psycopg.types.json import Json
+import argparse
+import os
+import sys, os
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+
 
 # Use your existing init_db from collector (we are not editing collector/db.py)
 from collector.db import init_db
@@ -149,20 +155,44 @@ async def insert_alert_into_db(pool, alert: dict):
 
 # ------------------ Fetch logs from logs table (same logic you used earlier) ------------------
 
-async def fetch_logs(pool, limit=5000):
+LAST_SCAN_FILE = "last_scan_bf.txt"
+
+def get_last_scan_time():
+    if os.path.exists(LAST_SCAN_FILE):
+        with open(LAST_SCAN_FILE, "r") as f:
+            return datetime.datetime.fromisoformat(f.read().strip())
+    return None
+
+def set_last_scan_time(ts):
+    with open(LAST_SCAN_FILE, "w") as f:
+        f.write(ts.isoformat())
+
+async def fetch_logs(pool, limit=5000, since=None):
     logs = []
     try:
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
-                await cur.execute(
-                    """
-                    SELECT timestamp, source_ip, username, outcome, category, message, raw
-                    FROM logs
-                    ORDER BY timestamp DESC
-                    LIMIT %s
-                    """,
-                    (limit,)
-                )
+                if since:
+                    await cur.execute(
+                        """
+                        SELECT timestamp, source_ip, username, outcome, category, message, raw
+                        FROM logs
+                        WHERE timestamp > %s
+                        ORDER BY timestamp ASC
+                        LIMIT %s
+                        """,
+                        (since, limit)
+                    )
+                else:
+                    await cur.execute(
+                        """
+                        SELECT timestamp, source_ip, username, outcome, category, message, raw
+                        FROM logs
+                        ORDER BY timestamp ASC
+                        LIMIT %s
+                        """,
+                        (limit,)
+                    )
                 rows = await cur.fetchall()
 
         for row in rows:
@@ -194,25 +224,47 @@ async def fetch_logs(pool, limit=5000):
 # ------------------ Main runner ------------------
 
 async def main():
-    pool = await init_db()  # uses collector/db.py's init_db (unchanged)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--full-scan", action="store_true", help="Scan all logs, not just new ones.")
+    args = parser.parse_args()
 
-    # Make sure alerts table exists (we do this here so collector/db.py remains untouched).
+    pool = await init_db()  # uses collector/db.py's init_db (unchanged)
     await ensure_alerts_table(pool)
 
-    logs = await fetch_logs(pool, limit=5000)
-    alerts = detect_failed_logins(logs)
+    if args.full_scan:
+        print(f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] Starting FULL scan of all logs...")
+        logs = await fetch_logs(pool, limit=5000, since=None)
+        alerts = detect_failed_logins(logs)
+        if alerts:
+            for a in alerts:
+                print(f"[ALERT] {a['rule']} - User:{a['user.name']} IP:{a['source.ip']} "
+                      f"Attempts:{a['count']} Time:{a['@timestamp']} Severity:{a['severity']}\n")
+                await insert_alert_into_db(pool, a)
+        else:
+            print("No suspicious activity detected (full scan).")
+        return  # exit after full scan
 
-    if alerts:
-        for a in alerts:
-            print(f"[ALERT] {a['rule']} - User:{a['user.name']} IP:{a['source.ip']} "
-                  f"Attempts:{a['count']} Time:{a['@timestamp']} Severity:{a['severity']}\n")
-            # Save the alert into the alerts table
-            await insert_alert_into_db(pool, a)
-    else:
-        print("No suspicious activity detected.")
+    # --- Continuous scheduled recent log scanning ---
+    while True:
+        scan_time = datetime.datetime.now(datetime.timezone.utc)
+        print(f"\n[{scan_time.isoformat()}] Starting scheduled scan for recent logs...")
+        last_scan = get_last_scan_time()
+        logs = await fetch_logs(pool, limit=5000, since=last_scan)
+        alerts = detect_failed_logins(logs)
 
-    # close pool if init_db returns a pool that needs explicit close (psycopg-pool auto-closes on GC,
-    # but if you want to close explicitly, add logic here). For now we leave it to the pool object.
+        if alerts:
+            for a in alerts:
+                print(f"[ALERT] {a['rule']} - User:{a['user.name']} IP:{a['source.ip']} "
+                      f"Attempts:{a['count']} Time:{a['@timestamp']} Severity:{a['severity']}\n")
+                await insert_alert_into_db(pool, a)
+        else:
+            print(f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] No suspicious activity detected.")
+
+        # update last scan time
+        set_last_scan_time(scan_time)
+
+        # wait 20 seconds before next scan
+        await asyncio.sleep(40)
 
 if __name__ == "__main__":
     asyncio.run(main())

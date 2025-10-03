@@ -102,6 +102,8 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSeverity, setSelectedSeverity] = useState("All Severities");
   const [selectedTechnique, setSelectedTechnique] = useState("All Techniques");
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanResult, setScanResult] = useState<string | null>(null);
 
   // Calculate counts
   const totalAlerts = alerts.length;
@@ -116,6 +118,24 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
     if (startDate) query.append("startDate", startDate);
     if (endDate) query.append("endDate", endDate);
     window.location.href = `/alerts?${query.toString()}`;
+  };
+
+  const handleFullScan = async () => {
+    setScanLoading(true);
+    setScanResult(null);
+    try {
+      const res = await fetch("/api/trigger_full_scan", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setScanResult("Full scan completed. Check alerts for new results.");
+      } else {
+        setScanResult(data.error || "Full scan failed.");
+      }
+    } catch (err) {
+      setScanResult("Full scan failed: " + String(err));
+    } finally {
+      setScanLoading(false);
+    }
   };
 
   const filteredAlerts = alerts.filter(alert => {
@@ -329,6 +349,28 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
             Apply Filters
           </button>
         </div>
+        <button
+          onClick={handleFullScan}
+          disabled={scanLoading}
+          style={{
+            width: '100%',
+            padding: '10px',
+            backgroundColor: scanLoading ? '#d1d5db' : '#10b981',
+            color: 'white',
+            border: 'none',
+            borderRadius: '6px',
+            fontSize: '14px',
+            cursor: scanLoading ? 'not-allowed' : 'pointer',
+            marginBottom: '15px',
+            marginTop: '10px',
+            fontWeight: 'bold'
+          }}
+        >
+          {scanLoading ? 'Running Full Scan...' : 'Run Full Scan'}
+        </button>
+        {scanResult && (
+          <div style={{ color: scanResult.includes('completed') ? '#10b981' : '#ef4444', fontSize: '13px', marginTop: '8px' }}>{scanResult}</div>
+        )}
       </div>
 
       {/* Main Content */}
