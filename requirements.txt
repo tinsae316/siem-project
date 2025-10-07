@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 asyncpg
+psycopg[binary,pool]
 watchdog
 pydantic
 python-dotenv
