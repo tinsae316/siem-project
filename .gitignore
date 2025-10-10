@@ -19,5 +19,6 @@ venv/
 .venv
 
 .vscode/
-dashboard/.next/
+/lib/generated/prisma
 ./next
+.next/

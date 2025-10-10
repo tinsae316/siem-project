@@ -1,17 +1,21 @@
-// pages/dashboard.tsx
+// pages/dashboard.tsx (replace your broken file with this)
 import { GetServerSideProps } from "next";
 import * as cookie from "cookie";
 import { verifyToken } from "../lib/auth";
 import prisma from "../lib/prisma";
-import Link from "next/link";
-import { useState } from "react";
+import React, { useState } from "react";
+import { FiSettings as SettingsIcon, FiHome, FiList, FiShield } from "react-icons/fi";
+import { useRouter } from "next/router";
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { useMemo } from "react";
 
 interface Log {
   id: number;
   message: string;
-  severity: number | null;
+  severity: string | null; // normalized to string for charts
   timestamp: string;
   source_ip: string | null;
+  outcome?: string | null; // optional outcome field for logs
 }
 
 interface Alert {
@@ -26,9 +30,16 @@ interface Alert {
   raw: any | null;
 }
 
+interface User {
+  id: number;
+  email: string;
+  username: string;
+}
+
 interface DashboardProps {
   logs: Log[];
   alerts: Alert[];
+  users: User[];
 }
 
 export const getServerSideProps: GetServerSideProps<DashboardProps> = async (ctx) => {
@@ -45,13 +56,7 @@ export const getServerSideProps: GetServerSideProps<DashboardProps> = async (ctx
     const logsRaw = await prisma.logs.findMany({
       orderBy: { timestamp: "desc" },
       take: 10,
-      select: {
-        id: true,
-        message: true,
-        severity: true,
-        timestamp: true,
-        source_ip: true,
-      },
+      select: { id: true, message: true, severity: true, timestamp: true, source_ip: true },
     });
 
     const alertsRaw = await prisma.alerts.findMany({
@@ -59,12 +64,20 @@ export const getServerSideProps: GetServerSideProps<DashboardProps> = async (ctx
       take: 10,
     });
 
+    const users = await prisma.users.findMany({
+      select: { id: true, email: true, username: true },
+    });
+
+    // Normalize severities to strings (or null)
     const logs: Log[] = logsRaw.map((log: any) => ({
-      ...log,
+      id: log.id,
       message: log.message ?? "No message",
-      severity: log.severity ?? null,
+      // convert undefined/null/number -> string | null
+      severity:
+        log.severity !== undefined && log.severity !== null ? String(log.severity) : null,
       source_ip: log.source_ip ?? null,
-      timestamp: log.timestamp instanceof Date ? log.timestamp.toISOString() : String(log.timestamp),
+      timestamp:
+        log.timestamp instanceof Date ? log.timestamp.toISOString() : String(log.timestamp),
     }));
 
     const alerts: Alert[] = alertsRaw.map((alert: any) => ({
@@ -75,232 +88,202 @@ export const getServerSideProps: GetServerSideProps<DashboardProps> = async (ctx
       attempt_count: alert.attempt_count ?? null,
       severity: alert.severity ?? null,
       technique: alert.technique ?? null,
-      timestamp: alert.timestamp instanceof Date ? alert.timestamp.toISOString() : String(alert.timestamp),
+      timestamp:
+        alert.timestamp instanceof Date ? alert.timestamp.toISOString() : String(alert.timestamp),
       raw: alert.raw ?? null,
     }));
 
-    return { props: { logs, alerts } };
+    return { props: { logs, alerts, users } };
   } catch (err) {
     console.error(err);
     return { redirect: { destination: "/login", permanent: false } };
   }
 };
 
-export default function Dashboard({ logs, alerts }: DashboardProps) {
-  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const totalEvents = logs.length;
-  const activeAlerts = alerts.filter((a) => a.severity).length;
-  const criticalAlerts = alerts.filter((a) => a.severity?.toLowerCase() === "high").length;
+/* ---------------- Sidebar component (Settings dropdown shows Create New Admin) ---------------- */
+function Sidebar() {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const router = useRouter();
+
+  const handleCreateAdmin = () => {
+    router.push("/signup");
+  };
 
   return (
-    <div className="container mx-auto p-6 bg-gray-50 min-h-screen">
-      {/* Header with Settings Icon */}
-      <div className="mb-8 relative">
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h1 className="text-3xl font-bold mb-2">SIEM Security Dashboard</h1>
-          </div>
-          
-          {/* Settings Icon Dropdown */}
+    <aside className="w-60 bg-white border-r shadow-sm fixed top-0 left-0 h-screen flex flex-col justify-between">
+      <div>
+        <div className="p-4 font-bold text-xl border-b">🔒 SIEM Dashboard</div>
+        <nav className="p-4 space-y-2 text-gray-700">
+          {[
+            { name: "Overview", path: "/dashboard", icon: <FiHome /> },
+            { name: "Security Logs", path: "/logs", icon: <FiList /> },
+            { name: "Security Alerts", path: "/alerts", icon: <FiShield /> },
+          ].map((item) => (
+            <a
+              key={item.name}
+              href={item.path}
+              className={`w-full  text-left px-3 py-2 rounded hover:bg-gray-100 flex items-center gap-2 ${
+                item.name === "Overview" ? "bg-red-500 text-white hover:bg-red-600" : ""
+              }`}
+            >
+              <span className="text-sm">{item.icon}</span>
+              <span>{item.name}</span>
+            </a>
+          ))}
+
+          {/* Settings Dropdown */}
           <div className="relative">
             <button
-              onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-              className="p-2 rounded-full hover:bg-gray-200 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-gray-400"
-              aria-label="Settings"
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 flex justify-between items-center"
             >
-              <svg 
-                className="w-6 h-6 text-gray-600" 
-                fill="none" 
-                stroke="currentColor" 
-                viewBox="0 0 24 24" 
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  strokeWidth={2} 
-                  d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" 
-                />
-                <path 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  strokeWidth={2} 
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" 
-                />
-              </svg>
+              <div className="flex items-center gap-2">
+                <SettingsIcon />
+                <span>Settings</span>
+              </div>
+              <span className="ml-2 text-xs">{settingsOpen ? "▲" : "▼"}</span>
             </button>
-            
-            {/* Dropdown Menu */}
-            {isDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg py-1 z-10 border border-gray-200">
-                <Link href="/signup">
-                  <div 
-                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                    onClick={() => setIsDropdownOpen(false)}
-                  >
-                    <div className="flex items-center">
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                      </svg>
-                      Create New Admin
-                    </div>
-                  </div>
-                </Link>
-                <div className="border-t border-gray-100 my-1"></div>
-                <Link href="/settings">
-                  <div 
-                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                    onClick={() => setIsDropdownOpen(false)}
-                  >
-                    <div className="flex items-center">
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      </svg>
-                      System Settings
-                    </div>
-                  </div>
-                </Link>
-                <Link href="/profile">
-                  <div 
-                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 cursor-pointer"
-                    onClick={() => setIsDropdownOpen(false)}
-                  >
-                    <div className="flex items-center">
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                      </svg>
-                      User Profile
-                    </div>
-                  </div>
-                </Link>
+
+            {settingsOpen && (
+              <div className="pl-4 mt-1 flex flex-col space-y-1">
+                <button
+                  onClick={handleCreateAdmin}
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 text-gray-700"
+                >
+                  Create New Admin
+                </button>
               </div>
             )}
           </div>
+        </nav>
+      </div>
+    </aside>
+  );
+}
+
+/* ---------------- Dashboard Page ---------------- */
+export default function Dashboard({ logs, alerts, users }: DashboardProps) {
+  const totalEvents = logs.length;
+  const totalAlerts = alerts.length;
+  const threatsBlocked = logs.length;
+  const activeUsers = users.length;
+  const router = useRouter();
+
+  // Logout function (keeps behavior you had)
+  const handleLogout = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    // you previously redirected to /landing
+    window.location.href = "/landing";
+  };
+
+  return (
+    <div className="flex min-h-screen bg-gray-50">
+      {/* Fixed Sidebar */}
+      <Sidebar />
+
+      {/* Scrollable Main Content */}
+      <main className="flex-1 ml-60 p-8 overflow-y-auto h-screen">
+        {/* Header with Logout */}
+        <div className="flex justify-between items-center mb-6">
+          <div>
+            <h1 className="text-3xl font-bold">Security Overview</h1>
+            <p className="text-gray-600">Monitor your organization’s security posture and recent activities.</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium shadow"
+          >
+            Logout
+          </button>
         </div>
 
-        {/* Close dropdown when clicking outside */}
-        {isDropdownOpen && (
-          <div 
-            className="fixed inset-0 z-0" 
-            onClick={() => setIsDropdownOpen(false)}
-          ></div>
-        )}
-
-        {/* Metrics Row */}
+        {/* Metrics Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-lg shadow-sm border-l-4 border-gray-400">
-            <h2 className="text-gray-600 text-sm font-medium mb-1">Total Events</h2>
-            <p className="text-3xl font-bold">{totalEvents}</p>
-            <p className="text-xs text-gray-500 mt-1">Last 24 hours</p>
-          </div>
-          
-          <div className="bg-white p-6 rounded-lg shadow-sm border-l-4 border-purple-500">
-            <h2 className="text-gray-600 text-sm font-medium mb-1">Active Alerts</h2>
-            <p className="text-3xl font-bold text-purple-600">{activeAlerts}</p>
-            <p className="text-xs text-gray-500 mt-1">Requires attention</p>
-          </div>
-          
-          <div className="bg-white p-6 rounded-lg shadow-sm border-l-4 border-red-500">
-            <h2 className="text-gray-600 text-sm font-medium mb-1">Critical Alerts</h2>
-            <p className="text-3xl font-bold text-red-600">{criticalAlerts}</p>
-            <p className="text-xs text-gray-500 mt-1">High priority</p>
-          </div>
-          
-          <div className="bg-white p-6 rounded-lg shadow-sm border-l-4 border-green-500">
-            <h2 className="text-gray-600 text-sm font-medium mb-1">System Status</h2>
-            <p className="text-3xl font-bold text-green-600">Online</p>
-            <p className="text-xs text-gray-500 mt-1">All systems operational</p>
-          </div>
+          <MetricCard title="Total Logs" value={totalEvents} trend="+2.5%" />
+          <MetricCard title="Security Alerts" value={totalAlerts} trend="-12%" negative />
+          <MetricCard title="Threats Blocked" value={threatsBlocked} trend="+8.2%" />
+          <MetricCard title="Active Users" value={activeUsers} trend="+1.8%" />
         </div>
+        {/* Two-column content */}
+        <div className="grid md:grid-cols-2 gap-8 pb-8">
+  {/* Recent Events */}
+  <div className="bg-white p-6 rounded-lg shadow-sm border">
+    <h2 className="text-lg font-semibold mb-2">Recent Logs</h2>
+    <p className="text-sm text-gray-500 mb-4">
+      Latest security logs from the past 24 hours
+    </p>
 
-        {/* Navigation Buttons */}
-        <div className="flex gap-3 justify-end">
-          <Link href="/logs">
-            <button className="border border-gray-300 px-4 py-2 rounded text-gray-700 hover:bg-gray-50 transition">
-              View Logs
-            </button>
-          </Link>
-          <Link href="/alerts">
-            <button className="bg-gray-800 text-white px-4 py-2 rounded hover:bg-gray-700 transition">
-              View Alerts
-            </button>
-          </Link>
-        </div>
+    {logs.length === 0 ? (
+      <p className="text-gray-400">No events recorded</p>
+    ) : (
+      <div className="space-y-3">
+        {logs.slice(0, 5).map((log) => (
+          <div
+            key={log.id}
+            className="p-3 rounded border-l-4 border-gray-400 bg-gray-50"
+          >
+            <p className="font-medium">{log.message}</p>
+            <p className="text-sm text-gray-500">
+              IP: {log.source_ip ?? "Unknown"} •{" "}
+              {new Date(log.timestamp).toLocaleString()}
+            </p>
+          </div>
+        ))}
       </div>
+    )}
+  </div>
 
-      {/* Content Sections */}
-      <div className="space-y-8">
-        {/* Recent Security Alerts Section */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-xl font-semibold mb-4 text-gray-800">Recent Security Alerts</h2>
-          <p className="text-sm text-gray-600 mb-4">Latest security incidents requiring attention</p>
-          
-          <div className="border-t border-gray-200 pt-4">
-            {alerts.length === 0 ? (
-              <p className="text-gray-500">No alerts</p>
-            ) : (
-              <div className="space-y-4">
-                {alerts.slice(0, 3).map((alert) => (
-                  <div key={alert.id} className="border-l-4 border-red-500 pl-4 py-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`px-2 py-1 rounded text-xs font-bold ${
-                        alert.severity?.toLowerCase() === "high" 
-                          ? "bg-red-100 text-red-800" 
-                          : "bg-purple-100 text-purple-800"
-                      }`}>
-                        {alert.severity ?? "N/A"}
-                      </span>
-                      <span className="font-medium">{alert.rule}</span>
-                    </div>
-                    <div className="text-sm text-gray-600 ml-2">
-                      <span className="font-medium">{alert.user_name}</span>
-                      <span className="mx-2">•</span>
-                      <span>{new Date(alert.timestamp).toLocaleDateString()}, {new Date(alert.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+  {/* Recent Alerts */}
+  <div className="bg-white p-6 rounded-lg shadow-sm border">
+    <h2 className="text-lg font-semibold mb-2">Recent Alerts</h2>
+    <p className="text-sm text-gray-500 mb-4">
+      Latest triggered alerts from the system
+    </p>
 
-        {/* System Activity Logs Section */}
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h2 className="text-xl font-semibold mb-4 text-gray-800">System Activity Logs</h2>
-          <p className="text-sm text-gray-600 mb-4">Recent system events and activities</p>
-          
-          <div className="border-t border-gray-200 pt-4">
-            {logs.length === 0 ? (
-              <p className="text-gray-500">No logs</p>
-            ) : (
-              <div className="space-y-4">
-                {logs.slice(0, 3).map((log) => (
-                  <div key={log.id} className="border-l-4 border-gray-400 pl-4 py-2">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className={`px-2 py-1 rounded text-xs font-bold ${
-                        log.severity === 1 
-                          ? "bg-gray-100 text-gray-800"
-                          : log.severity === 2 
-                          ? "bg-blue-100 text-blue-800"
-                          : "bg-purple-100 text-purple-800"
-                      }`}>
-                        Level {log.severity ?? "N/A"}
-                      </span>
-                      <span>{log.message}</span>
-                    </div>
-                    <div className="text-sm text-gray-600 ml-2">
-                      <span>{log.source_ip ?? "Unknown IP"}</span>
-                      <span className="mx-2">•</span>
-                      <span>{new Date(log.timestamp).toLocaleDateString()}, {new Date(log.timestamp).toLocaleTimeString()}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+    {alerts.length === 0 ? (
+      <p className="text-gray-400">No alerts triggered</p>
+    ) : (
+      <div className="space-y-3">
+        {alerts.slice(0, 6).map((alert) => (
+          <div
+            key={alert.id}
+            className="p-3 rounded border-l-4 border-red-400 bg-red-50"
+          >
+            <p className="font-medium text-red-600">{alert.rule}</p>
+            <p className="text-sm text-gray-500">
+              User: {alert.user_name ?? "Unknown"} •{" "}
+              {new Date(alert.timestamp).toLocaleString()}
+            </p>
           </div>
-        </div>
+        ))}
       </div>
+    )}
+  </div>
+</div>
+</main>
+</div>
+  );
+}
+
+/* ---------------- MetricCard component ---------------- */
+function MetricCard({
+  title,
+  value,
+  trend,
+  negative,
+}: {
+  title: string;
+  value: number;
+  trend: string;
+  negative?: boolean;
+}) {
+  return (
+    <div className="bg-white p-6 rounded-lg shadow-sm border">
+      <h2 className="text-sm text-gray-600 mb-1">{title}</h2>
+      <p className="text-3xl font-bold">{value}</p>
+      <p className={`text-sm ${negative ? "text-red-500" : "text-green-500"} font-medium mt-1`}>
+        {trend} from last month
+      </p>
     </div>
   );
 }

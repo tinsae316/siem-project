@@ -8,6 +8,7 @@ interface Log {
   id: number;
   message: string | null;
   severity: number | null;
+  outcome: string;
   timestamp: string;
   source_ip: string | null;
   category?: string;
@@ -49,32 +50,34 @@ export const getServerSideProps: GetServerSideProps<LogsPageProps> = async (ctx)
   }
 };
 
-const getSeverityType = (severity: number | null): string => {
-  if (severity === null) return "Info";
-  switch(severity) {
-    case 0: return "Success";
-    case 1: return "Info";
-    case 2: return "Warning";
-    case 3: return "Error";
-    default: return "Info";
-  }
+const getOutcomeType = (outcome: string ): string  => {
+  if (!outcome) return "Unknown";
+
+  const outcomeLower = outcome.toLowerCase();
+  
+  if (outcomeLower.includes('success')) return "Success";
+  if (outcomeLower.includes('failure')) return "Failure";
+  if (outcomeLower.includes('denied')) return "Denied";
+
+  return "Unknown";
 };
 
-const getSeverityIcon = (severity: string): string => {
-  switch(severity) {
+const getOutcomeIcon = (outcome: string): string => {
+  switch(outcome) {
     case "Success": return "✓";
-    case "Error": return "!";
-    case "Warning": return "⚠";
+    case "Denied": return "!";
+    case "Failure": return "⚠";
+    case "Unknown": return "i";
     default: return "i";
   }
 };
 
-const getSeverityColor = (severity: string): string => {
-  switch(severity) {
+const getOutcomeColor = (outcome: string): string => {
+  switch(outcome) {
     case "Success": return "#10b981";
-    case "Error": return "#ef4444";
-    case "Warning": return "#f59e0b";
-    case "Info": return "#3b82f6";
+    case "Denied": return "#ef4444";
+    case "Failure": return "#f59e0b";
+    case "Unknown": return "#3b82f6";
     default: return "#6b7280";
   }
 };
@@ -88,10 +91,10 @@ export default function LogsPage({ logs }: LogsPageProps) {
 
   // Calculate counts
   const totalLogs = logs.length;
-  const errorCount = logs.filter(log => getSeverityType(log.severity) === "Error").length;
-  const warningCount = logs.filter(log => getSeverityType(log.severity) === "Warning").length;
-  const successCount = logs.filter(log => getSeverityType(log.severity) === "Success").length;
-  const infoCount = logs.filter(log => getSeverityType(log.severity) === "Info").length;
+  const errorCount = logs.filter(log => getOutcomeType(log.outcome) === "Denied").length;
+  const warningCount = logs.filter(log => getOutcomeType(log.outcome) === "Failure").length;
+  const successCount = logs.filter(log => getOutcomeType(log.outcome) === "Success").length;
+  const infoCount = logs.filter(log => getOutcomeType(log.outcome) === "Unknown").length;
 
   const handleFilter = (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,12 +103,16 @@ export default function LogsPage({ logs }: LogsPageProps) {
     if (endDate) query.append("endDate", endDate);
     window.location.href = `/logs?${query.toString()}`;
   };
+  
+  const handleBack = () => {
+    window.history.back();
+  };
 
   const filteredLogs = logs.filter(log => {
     const matchesSearch = !searchTerm || 
       (log.message && log.message.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesCategory = selectedCategory === "All Categories" || log.category === selectedCategory;
-    const matchesType = selectedType === "All Types" || getSeverityType(log.severity) === selectedType;
+    const matchesCategory = selectedCategory === "All Categories" || log.category === selectedCategory; 
+    const matchesType = selectedType === "All Types" || getOutcomeType(log.outcome) === selectedType;
     
     return matchesSearch && matchesCategory && matchesType;
   });
@@ -136,9 +143,32 @@ export default function LogsPage({ logs }: LogsPageProps) {
         padding: '20px',
         borderRight: '1px solid #e2e8f0',
         boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        overflowY: 'auto'
+        overflowY: 'auto',
+        position: 'relative'
       }}>
-        <h2 style={{ marginBottom: '30px', color: '#1e293b' }}>System Logs</h2>
+        {/* Back Button */}
+        <button 
+          onClick={handleBack}
+          style={{
+            position: 'absolute',
+            top: '20px',
+            right: '20px',
+            padding: '8px 12px',
+            backgroundColor: '#f8fafc',
+            color: '#64748b',
+            border: '1px solid #e2e8f0',
+            borderRadius: '6px',
+            fontSize: '12px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
+        >
+          ← Back
+        </button>
+
+        <h2 style={{ marginBottom: '30px', color: '#1e293b', paddingRight: '60px' }}>System Logs</h2>
         <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '30px' }}>
           Monitor and analyze system events and activities
         </p>
@@ -163,7 +193,7 @@ export default function LogsPage({ logs }: LogsPageProps) {
               textAlign: 'center'
             }}>
               <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ef4444' }}>{errorCount}</div>
-              <div style={{ fontSize: '12px', color: '#ef4444' }}>Errors</div>
+              <div style={{ fontSize: '12px', color: '#ef4444' }}>Denieds</div>
             </div>
             
             <div style={{ 
@@ -173,7 +203,7 @@ export default function LogsPage({ logs }: LogsPageProps) {
               textAlign: 'center'
             }}>
               <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#f59e0b' }}>{warningCount}</div>
-              <div style={{ fontSize: '12px', color: '#f59e0b' }}>Warnings</div>
+              <div style={{ fontSize: '12px', color: '#f59e0b' }}>Failures</div>
             </div>
             
             <div style={{ 
@@ -193,7 +223,7 @@ export default function LogsPage({ logs }: LogsPageProps) {
               textAlign: 'center'
             }}>
               <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#3b82f6' }}>{infoCount}</div>
-              <div style={{ fontSize: '12px', color: '#3b82f6' }}>Info</div>
+              <div style={{ fontSize: '12px', color: '#3b82f6' }}>Unknown</div>
             </div>
           </div>
         </div>
@@ -242,10 +272,9 @@ export default function LogsPage({ logs }: LogsPageProps) {
             }}
           >
             <option>All Categories</option>
-            <option>System</option>
-            <option>Security</option>
-            <option>Auth</option>
-            <option>User Management</option>
+            <option>Authentication</option>
+            <option>Firewall</option>
+            <option>Web</option>
           </select>
           
           <select 
@@ -262,10 +291,10 @@ export default function LogsPage({ logs }: LogsPageProps) {
             }}
           >
             <option>All Types</option>
-            <option>Error</option>
-            <option>Warning</option>
+            <option>Denied</option>
+            <option>Failure</option>
             <option>Success</option>
-            <option>Info</option>
+            <option>Unknown</option>
           </select>
           
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px' }}>
@@ -364,7 +393,7 @@ export default function LogsPage({ logs }: LogsPageProps) {
             ) : (
               <div>
                 {filteredLogs.map(log => {
-                  const severityType = getSeverityType(log.severity);
+                  const outcomeType = getOutcomeType(log.outcome);
                   return (
                     <div key={log.id} style={{ 
                       padding: '15px',
@@ -377,7 +406,7 @@ export default function LogsPage({ logs }: LogsPageProps) {
                         width: '24px',
                         height: '24px',
                         borderRadius: '50%',
-                        backgroundColor: getSeverityColor(severityType),
+                        backgroundColor: getOutcomeColor(outcomeType),
                         color: 'white',
                         display: 'flex',
                         alignItems: 'center',
@@ -386,7 +415,7 @@ export default function LogsPage({ logs }: LogsPageProps) {
                         fontWeight: 'bold',
                         flexShrink: 0
                       }}>
-                        {getSeverityIcon(severityType)}
+                        {getOutcomeIcon(outcomeType || "Unknown")}
                       </div>
                       
                       <div style={{ flex: 1 }}>
@@ -421,7 +450,7 @@ export default function LogsPage({ logs }: LogsPageProps) {
                         color: '#64748b',
                         fontWeight: 'bold'
                       }}>
-                        {severityType}
+                        {outcomeType}
                       </div>
                     </div>
                   );

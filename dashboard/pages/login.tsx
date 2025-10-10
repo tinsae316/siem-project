@@ -1,4 +1,3 @@
-// pages/login.tsx
 import { useState } from "react";
 import { useRouter } from "next/router";
 
@@ -6,10 +5,12 @@ export default function Login() {
   const router = useRouter();
   const [form, setForm] = useState({ username: "", password: "" });
   const [error, setError] = useState("");
+  const [isCheckingAuth, setIsCheckingAuth] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setIsCheckingAuth(true);
 
     try {
       const res = await fetch("/api/auth/login", {
@@ -28,18 +29,28 @@ export default function Login() {
     } catch (err) {
       console.error(err);
       setError("An unexpected error occurred");
+    } finally {
+      setIsCheckingAuth(false);
     }
   };
 
+  // 🔥 Show loading screen while checking authentication
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-lg font-medium text-gray-700 animate-pulse">
+          Signing you in...
+        </div>
+      </div>
+    );
+  }
+
   return (
-    // Changed background to a slightly lighter gray for a closer match
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <form
         onSubmit={handleSubmit}
-        // Increased padding and adjusted max-width
         className="bg-white shadow-lg rounded-lg p-8 w-full max-w-md"
       >
-        {/* --- Section 1: Updated Header --- */}
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-gray-800 mb-2">
             Welcome back
@@ -49,7 +60,6 @@ export default function Login() {
 
         {error && <p className="text-red-600 mb-4 text-center">{error}</p>}
 
-        {/* --- Section 2: Updated Input Fields with Labels and Icons --- */}
         <div className="mb-4">
           <label
             htmlFor="username"
@@ -59,7 +69,6 @@ export default function Login() {
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              {/* SVG icon for email */}
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-5 w-5 text-gray-400"
@@ -81,7 +90,6 @@ export default function Login() {
               placeholder="Enter your username or email"
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
-              // Added padding-left for the icon
               className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -96,7 +104,6 @@ export default function Login() {
           </label>
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              {/* SVG icon for password */}
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 className="h-5 w-5 text-gray-400"
@@ -118,34 +125,38 @@ export default function Login() {
               placeholder="Enter your password"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
-              // Added padding-left for the icon
               className="w-full pl-10 pr-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
         </div>
-        
-        {/* --- Section 3: Added 'Remember me' and 'Forgot Password?' --- */}
+
         <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center">
-                <input id="remember-me" name="remember-me" type="checkbox" className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" />
-                <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
-                    Remember me
-                </label>
-            </div>
-            <div className="text-sm">
-                <a href="#" className="font-medium text-blue-600 hover:text-blue-500">
-                    Forgot password?
-                </a>
-            </div>
+          <div className="flex items-center">
+            <input
+              id="remember-me"
+              name="remember-me"
+              type="checkbox"
+              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+            />
+            <label
+              htmlFor="remember-me"
+              className="ml-2 block text-sm text-gray-900"
+            >
+              Remember me
+            </label>
+          </div>
         </div>
 
-        {/* --- Section 4: Updated Button --- */}
         <button
           type="submit"
-          // Changed button text and color to match the design
-          className="w-full py-2 bg-orange-500 text-white font-semibold rounded-lg hover:bg-orange-600 transition"
+          disabled={isCheckingAuth}
+          className={`w-full py-2 font-semibold rounded-lg transition ${
+            isCheckingAuth
+              ? "bg-orange-300 cursor-not-allowed"
+              : "bg-orange-500 hover:bg-orange-600 text-white"
+          }`}
         >
-          Sign In
+          {isCheckingAuth ? "Signing in..." : "Sign In"}
         </button>
       </form>
     </div>
