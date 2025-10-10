@@ -1,6 +1,20 @@
+import { GetServerSideProps } from "next";
 import { useState } from "react";
 import { useRouter } from "next/router";
+import * as cookie from "cookie";
 import { FiEye, FiEyeOff, FiAlertTriangle, FiBarChart2, FiLock, FiUsers, FiGlobe, FiMail } from "react-icons/fi";
+
+interface SignupProps {}
+
+export const getServerSideProps: GetServerSideProps<SignupProps> = async (ctx) => {
+  const cookies = ctx.req.headers.cookie || "";
+  const { token } = cookie.parse(cookies);
+
+  if (!token) {
+    return { redirect: { destination: "/login", permanent: false } };
+  }
+  return { props: {} };
+}
 
 export default function Signup() {
   const router = useRouter();
@@ -22,7 +36,7 @@ export default function Signup() {
       });
 
       if (res.ok) {
-        router.push("/dashboard");
+        router.push("/login");
       } else {
         const data = await res.json();
         setError(data.error || "An unknown error occurred during signup.");
@@ -43,8 +57,8 @@ export default function Signup() {
 
         <div className="bg-white rounded-lg border border-gray-200 p-8">
           <div className="text-center mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">Create your account</h2>
-            <p className="text-gray-600 text-sm">Enter your details below to get started</p>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Create new account</h2>
+            <p className="text-gray-600 text-sm">Enter the account details below to get started</p>
           </div>
 
           {error && (
@@ -114,22 +128,9 @@ export default function Signup() {
               className="w-full bg-orange-500 hover:bg-orange-600 text-white font-medium py-2.5 px-4 rounded-md transition duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={isLoading}
             >
-              {isLoading ? "Signing Up..." : "Sign Up"}
+              {isLoading ? "Signing Up..." : "Creating new Admin"}
             </button>
           </form>
-
-          <div className="mt-8 pt-6 border-t border-gray-200">
-            <p className="text-xs text-gray-500 text-center">
-              By signing up, you agree to our{" "}
-              <a href="/terms" className="text-orange-500 hover:text-orange-600 font-medium">
-                Terms of Service
-              </a>{" "}
-              and{" "}
-              <a href="/privacy" className="text-orange-500 hover:text-orange-600 font-medium">
-                Privacy Policy
-              </a>
-            </p>
-          </div>
         </div>
 
         <div className="text-center mt-6">

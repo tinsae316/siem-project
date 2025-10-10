@@ -137,6 +137,9 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
       setScanLoading(false);
     }
   };
+  const handleBack = () => {
+    window.history.back();
+  };
 
   const filteredAlerts = alerts.filter(alert => {
     const matchesSearch = !searchTerm || 
@@ -176,9 +179,32 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
         padding: '20px',
         borderRight: '1px solid #e2e8f0',
         boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        overflowY: 'auto'
+        overflowY: 'auto',
+        position: 'relative'
       }}>
-        <h2 style={{ marginBottom: '30px', color: '#1e293b' }}>Security Alerts</h2>
+        {/* Back Button */}
+        <button 
+          onClick={handleBack}
+          style={{
+            position: 'absolute',
+            top: '20px',
+            right: '20px',
+            padding: '8px 12px',
+            backgroundColor: '#f8fafc',
+            color: '#64748b',
+            border: '1px solid #e2e8f0',
+            borderRadius: '6px',
+            fontSize: '12px',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '4px'
+          }}
+        >
+          ← Back
+        </button>
+
+        <h2 style={{ marginBottom: '30px', color: '#1e293b', paddingRight: '60px' }}>Security Alerts</h2>
         <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '30px' }}>
           Monitor and analyze security events and threats
         </p>
@@ -302,8 +328,15 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
             }}
           >
             <option>All Techniques</option>
-            <option>Credential Stuffing</option>
-            <option>Brute Force</option>
+            <option>brute_force</option>
+            <option>credential_stuffing</option>
+            <option>distributed_bruteforce</option>
+            <option>data_exfiltration</option>
+            <option>endpoint_scanning</option>
+            <option>network_denial</option>
+            <option>port_scanning</option>
+            <option>privilege_escalation</option>
+            <option>protocol_misuse</option>
             <option>SQLi</option>
             <option>XSS</option>
           </select>
