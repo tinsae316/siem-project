@@ -23,7 +23,7 @@
     "isolatedModules": true
   },
   "include": [
-    "next-env.d.ts",
+    "dashboard/next-env.d.ts",
     "**/*.ts",
     "**/*.tsx"
   ],

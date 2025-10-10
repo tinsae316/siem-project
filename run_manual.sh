@@ -114,7 +114,7 @@ print_status "Installing Node.js dependencies..."
 cd dashboard
 if [ -f package.json ]; then
     npm install
-else
+elsedatetime.datetime.utcnow()
     print_error "package.json not found in dashboard directory"
     exit 1
 fi
