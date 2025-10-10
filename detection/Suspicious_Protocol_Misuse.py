@@ -1,15 +1,21 @@
+# detection/Protocol_Misuse_Detector.py
 import asyncio
 import datetime
+import os
 from collections import defaultdict, deque
 from psycopg.types.json import Json
-from collector.db import init_db
 import ipaddress
 import logging
-import math
+import argparse
+import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from collector.db import init_db
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("protocol-misuse-detector")
 
+# ---------------- Configuration ----------------
 CONFIG = {
     "unusual_protocols": ["icmp", "udp", "ftp", "telnet"],
     "attempt_threshold": 3,
@@ -18,8 +24,9 @@ CONFIG = {
     "db_batch_size": 20,
     "whitelist_src_cidrs": ["10.0.0.0/8", "192.168.0.0/16"]
 }
+LAST_SCAN_FILE = "last_scan_protocol.txt"
 
-# ---------- Helpers ----------
+# ---------------- Utility ----------------
 def ensure_dt(ts):
     if isinstance(ts, datetime.datetime):
         return ts if ts.tzinfo else ts.replace(tzinfo=datetime.timezone.utc)
@@ -33,8 +40,6 @@ def ensure_dt(ts):
 def normalize_ip(ip_str):
     if not ip_str:
         return None
-    if hasattr(ip_str, 'compressed'):
-        ip_str = str(ip_str)
     try:
         ip_obj = ipaddress.ip_address(ip_str)
         return str(ip_obj)
@@ -55,12 +60,20 @@ def is_whitelisted(ip: str):
         return False
     return False
 
-# ---------- Detector ----------
+def get_last_scan_time():
+    if os.path.exists(LAST_SCAN_FILE):
+        with open(LAST_SCAN_FILE, "r") as f:
+            return datetime.datetime.fromisoformat(f.read().strip())
+    return None
+
+def set_last_scan_time(ts):
+    with open(LAST_SCAN_FILE, "w") as f:
+        f.write(ts.isoformat())
+
+# ---------------- Detector ----------------
 class ProtocolMisuseDetector:
     def __init__(self):
-        # { src_ip: { protocol: deque[timestamps] } }
         self.protocol_usage = defaultdict(lambda: defaultdict(deque))
-        # dedup { alert_id: last_alert_time }
         self.last_alert_time = {}
 
     def detect(self, logs):
@@ -77,19 +90,14 @@ class ProtocolMisuseDetector:
 
             if not src_ip or is_whitelisted(src_ip):
                 continue
-
-            #if event_type != "firewall" or protocol not in CONFIG["unusual_protocols"]:
             if "firewall" not in event_type:
                 continue
 
             dq = self.protocol_usage[src_ip][protocol]
             dq.append(ts)
-
-            # expire old events
             while dq and (ts - dq[0]).total_seconds() > window_sec:
                 dq.popleft()
 
-            # threshold check
             if len(dq) >= CONFIG["attempt_threshold"]:
                 alert_id = f"protocol_misuse|{src_ip}|{protocol}"
                 last_alert = self.last_alert_time.get(alert_id)
@@ -109,59 +117,32 @@ class ProtocolMisuseDetector:
                     "attack.technique": "protocol_misuse",
                     "evidence": f"{len(dq)} attempts using unusual protocol '{protocol}' in last {CONFIG['window_minutes']} minutes"
                 })
-
                 self.last_alert_time[alert_id] = ts
-                dq.clear()  # avoid immediate repeat
-
+                dq.clear()
         return alerts
 
-# ---------- Fetch logs ----------
-async def fetch_firewall_logs(pool, limit=5000):
-    logs = []
-    try:
-        async with pool.connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute("""
-                    SELECT timestamp, source_ip, destination_ip, network, category, outcome, raw
-                    FROM logs
-                    WHERE 'firewall' = ANY(category)
-                    ORDER BY timestamp DESC
-                    LIMIT %s
-                """, (limit,))
-                rows = await cur.fetchall()
-        for r in rows:
-            raw = r[6] or {}
-            network = r[3] or {}
-            logs.append({
-                "@timestamp": r[0],
-                "source": {"ip": r[1]},
-                "destination": {"ip": r[2]},
-                "network": network,
-                "event": {"category": r[4], "outcome": r[5]},
-                "raw": raw
-            })
-    except Exception as e:
-        logger.exception(f"[!] Error fetching logs: {e}")
-    return logs
-
-# ---------- Insert alerts ----------
 async def insert_alerts(pool, alerts):
     if not alerts:
         return
+
     insert_sql = """
     INSERT INTO alerts (
         timestamp, rule, user_name, source_ip,
         attempt_count, severity, technique, raw, score, evidence
     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (timestamp, rule, source_ip) DO NOTHING
     """
+
     params_list = []
     for alert in alerts:
         ts_val = ensure_dt(alert["@timestamp"])
+        src_ip = normalize_ip(alert["source.ip"])
+
         params_list.append((
             ts_val,
             alert["rule"],
             None,
-            alert["source.ip"],
+            src_ip,
             alert.get("count", 1),
             alert.get("severity"),
             alert.get("attack.technique"),
@@ -182,21 +163,43 @@ async def insert_alerts(pool, alerts):
         for a in alerts:
             logger.debug("Alert data: %s", a)
 
-# ---------- Main Runner ----------
+# ---------------- Main ----------------
 async def main():
-    pool = await init_db()
-    logs = await fetch_firewall_logs(pool)
-    detector = ProtocolMisuseDetector()
-    alerts = detector.detect(logs)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--full-scan", action="store_true", help="Scan all logs, not just new ones.")
+    args = parser.parse_args()
 
-    if alerts:
-        await insert_alerts(pool, alerts)
-        for a in alerts:
-            logger.warning("[ALERT] %s - IP:%s Protocol:%s Time:%s Severity:%s Count:%s",
-                           a["rule"], a["source.ip"], a["protocol"],
-                           a["@timestamp"], a["severity"], a["count"])
-    else:
-        logger.info("No suspicious protocol misuse detected.")
+    pool = await init_db()
+    detector = ProtocolMisuseDetector()
+
+    if args.full_scan:
+        logger.info("Starting FULL protocol misuse scan...")
+        logs = await fetch_firewall_logs(pool, limit=5000, since=None)
+        alerts = detector.detect(logs)
+        if alerts:
+            for a in alerts:
+                logger.warning("[ALERT] %s - IP:%s Protocol:%s Time:%s Severity:%s Count:%s",
+                               a["rule"], a["source.ip"], a["protocol"], a["@timestamp"], a["severity"], a["count"])
+                await insert_alerts(pool, [a])
+        return
+
+    while True:
+        scan_time = datetime.datetime.now(datetime.timezone.utc)
+        last_scan = get_last_scan_time()
+        logger.info(f"[{scan_time.isoformat()}] Starting scheduled protocol misuse scan...")
+        logs = await fetch_firewall_logs(pool, limit=5000, since=last_scan)
+        alerts = detector.detect(logs)
+
+        if alerts:
+            for a in alerts:
+                logger.warning("[ALERT] %s - IP:%s Protocol:%s Time:%s Severity:%s Count:%s",
+                               a["rule"], a["source.ip"], a["protocol"], a["@timestamp"], a["severity"], a["count"])
+            await insert_alerts(pool, alerts)
+        else:
+            logger.info(f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] No suspicious protocol misuse detected.")
+
+        set_last_scan_time(scan_time)
+        await asyncio.sleep(40)
 
 if __name__ == "__main__":
     asyncio.run(main())

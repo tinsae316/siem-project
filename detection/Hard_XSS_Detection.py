@@ -131,12 +131,7 @@ def detect_hard_xss(logs, rate_threshold=3, window_minutes=5):
             })
     return alerts
 
-# --- Insert alert into DB ---
 async def insert_alert_into_db(pool, alert):
-    """
-    Insert into alerts table. Uses the (timestamp, rule, user_name, source_ip, attempt_count, severity, technique, raw)
-    columns to be consistent with other detectors.
-    """
     insert_sql = """
     INSERT INTO alerts (
         timestamp, rule, user_name, source_ip,
@@ -145,21 +140,21 @@ async def insert_alert_into_db(pool, alert):
         %(timestamp)s, %(rule)s, %(user_name)s, %(source_ip)s,
         %(attempt_count)s, %(severity)s, %(technique)s, %(raw)s
     )
+    ON CONFLICT (timestamp, rule, source_ip) DO NOTHING;
     """
-    # Normalize timestamp to timezone-aware datetime
+
     ts = alert.get("@timestamp")
     if isinstance(ts, str):
-        try:
-            ts_val = datetime.datetime.fromisoformat(ts)
-        except Exception:
-            ts_val = datetime.datetime.now(datetime.timezone.utc)
+        ts_val = datetime.datetime.fromisoformat(ts)
     else:
         ts_val = ts
 
-    src_ip = str(alert.get("source.ip")) if alert.get("source.ip") else None
+    src_ip = alert.get("source.ip")
+    if isinstance(src_ip, IPv4Address):
+        src_ip = str(src_ip)
 
-    # Prepare raw copy (stringify where necessary)
-    raw_copy = {k: (str(v) if isinstance(v, (IPv4Address, datetime.datetime)) else v) for k, v in alert.items()}
+    raw_copy = {k: (str(v) if isinstance(v, (IPv4Address, datetime.datetime)) else v)
+                for k, v in alert.items()}
 
     params = {
         "timestamp": ts_val,
@@ -224,7 +219,7 @@ async def main():
 
         # update last scan time and sleep
         set_last_scan_time(scan_time)
-        await asyncio.sleep(40)  # sleep 20 seconds between scans
+        await asyncio.sleep(400)  # sleep 20 seconds between scans
 
 if __name__ == "__main__":
     asyncio.run(main())

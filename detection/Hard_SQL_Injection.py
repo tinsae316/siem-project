@@ -65,37 +65,40 @@ def set_last_scan_time(ts):
 
 async def fetch_web_logs(pool, since=None):
     logs = []
-    async with pool.connection() as conn:
-        async with conn.cursor() as cur:
-            if since:
-                await cur.execute("""
-                    SELECT timestamp, username AS user_name, source_ip, outcome,
-                           message, http_method, url_path, raw
-                    FROM logs
-                    WHERE 'web' = ANY(category) AND timestamp > %s
-                    ORDER BY timestamp ASC
-                """, (since,))
-            else:
-                await cur.execute("""
-                    SELECT timestamp, username AS user_name, source_ip, outcome,
-                           message, http_method, url_path, raw
-                    FROM logs
-                    WHERE 'web' = ANY(category)
-                    ORDER BY timestamp ASC
-                """)
-            rows = await cur.fetchall()
-            for r in rows:
-                raw_data = r[7] or {}
-                body = raw_data.get("http", {}).get("request", {}).get("body", "")
-                logs.append({
-                    "@timestamp": r[0].isoformat(),
-                    "user": {"name": r[1] or "unknown"},
-                    "source": {"ip": r[2]},
-                    "event": {"category": ["web"], "outcome": r[3]},
-                    "message": r[4],
-                    "http": {"request": {"method": r[5], "body": body}},
-                    "url": {"original": r[6]}
-                })
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                if since:
+                    await cur.execute("""
+                        SELECT timestamp, username AS user_name, source_ip, outcome,
+                               message, http_method, url_path, raw
+                        FROM logs
+                        WHERE 'web' = ANY(category) AND timestamp > %s
+                        ORDER BY timestamp ASC
+                    """, (since,))
+                else:
+                    await cur.execute("""
+                        SELECT timestamp, username AS user_name, source_ip, outcome,
+                               message, http_method, url_path, raw
+                        FROM logs
+                        WHERE 'web' = ANY(category)
+                        ORDER BY timestamp ASC
+                    """)
+                rows = await cur.fetchall()
+                for r in rows:
+                    raw_data = r[7] or {}
+                    body = raw_data.get("http", {}).get("request", {}).get("body", "")
+                    logs.append({
+                        "@timestamp": r[0].isoformat(),
+                        "user": {"name": r[1] or "unknown"},
+                        "source": {"ip": r[2]},
+                        "event": {"category": ["web"], "outcome": r[3]},
+                        "message": r[4],
+                        "http": {"request": {"method": r[5], "body": body}},
+                        "url": {"original": r[6]}
+                    })
+    except Exception as e:
+        print(f"[!] DB query failed: {e}")
     return logs
 
 # --- Insert alert into DB ---
@@ -106,22 +109,22 @@ async def insert_alert(pool, alert: dict):
         attempt_count, severity, technique, raw
     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
     """
-    ts_val = datetime.datetime.fromisoformat(alert["@timestamp"]) if isinstance(alert["@timestamp"], str) else alert["@timestamp"]
-    src_ip = str(alert.get("source.ip")) if alert.get("source.ip") else None
-    raw_copy = {k: (str(v) if isinstance(v, IPv4Address) else v) for k, v in alert.items()}
-
-    params = (
-        ts_val,
-        alert.get("rule"),
-        alert.get("user.name"),
-        src_ip,
-        alert.get("count", 1),
-        alert.get("severity"),
-        alert.get("attack.technique"),
-        Json(raw_copy)
-    )
-
     try:
+        ts_val = datetime.datetime.fromisoformat(alert["@timestamp"]) if isinstance(alert["@timestamp"], str) else alert["@timestamp"]
+        src_ip = str(alert.get("source.ip")) if alert.get("source.ip") else None
+        raw_copy = {k: (str(v) if isinstance(v, IPv4Address) else v) for k, v in alert.items()}
+
+        params = (
+            ts_val,
+            alert.get("rule"),
+            alert.get("user.name"),
+            src_ip,
+            alert.get("count", 1),
+            alert.get("severity"),
+            alert.get("attack.technique"),
+            Json(raw_copy)
+        )
+
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 await cur.execute(insert_sql, params)
@@ -138,17 +141,17 @@ async def main():
     args = parser.parse_args()
 
     pool = await init_db()
+    await pool.open()  # ensure the async pool is open
 
     if args.full_scan:
         print(f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] Starting FULL SQLi scan of all logs...")
         logs = await fetch_web_logs(pool, since=None)
         alerts = detect_sqli(logs)
-        if alerts:
-            for alert in alerts:
-                print(f"[ALERT] {alert['rule']} - User:{alert['user.name']} IP:{alert['source.ip']} "
-                      f"Attempts:{alert['count']} Severity:{alert['severity']}")
-                await insert_alert(pool, alert)
-        else:
+        for alert in alerts:
+            print(f"[ALERT] {alert['rule']} - User:{alert['user.name']} IP:{alert['source.ip']} "
+                  f"Attempts:{alert['count']} Severity:{alert['severity']}")
+            await insert_alert(pool, alert)
+        if not alerts:
             print("[*] No SQL Injection detected (full scan).")
         return
 
@@ -157,19 +160,28 @@ async def main():
         scan_time = datetime.datetime.now(datetime.timezone.utc)
         print(f"\n[{scan_time.isoformat()}] Starting scheduled SQLi scan for recent logs...")
         last_scan = get_last_scan_time()
-        logs = await fetch_web_logs(pool, since=last_scan)
+
+        # Reconnect pool if closed or bad
+        try:
+            logs = await fetch_web_logs(pool, since=last_scan)
+        except Exception as e:
+            print(f"[!] Connection error, reopening pool: {e}")
+            pool = await init_db()
+            await pool.open()
+            logs = await fetch_web_logs(pool, since=last_scan)
+
         alerts = detect_sqli(logs)
 
-        if alerts:
-            for alert in alerts:
-                print(f"[ALERT] {alert['rule']} - User:{alert['user.name']} IP:{alert['source.ip']} "
-                      f"Attempts:{alert['count']} Severity:{alert['severity']}")
-                await insert_alert(pool, alert)
-        else:
+        for alert in alerts:
+            print(f"[ALERT] {alert['rule']} - User:{alert['user.name']} IP:{alert['source.ip']} "
+                  f"Attempts:{alert['count']} Severity:{alert['severity']}")
+            await insert_alert(pool, alert)
+
+        if not alerts:
             print(f"[{datetime.datetime.now(datetime.timezone.utc).isoformat()}] No SQL Injection detected.")
 
         set_last_scan_time(scan_time)
-        await asyncio.sleep(40)
+        await asyncio.sleep(400)
 
 if __name__ == "__main__":
     asyncio.run(main())
