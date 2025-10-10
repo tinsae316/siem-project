@@ -121,22 +121,23 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
   };
 
   const handleFullScan = async () => {
-    setScanLoading(true);
-    setScanResult(null);
-    try {
-      const res = await fetch("/api/trigger_full_scan", { method: "POST" });
-      const data = await res.json();
-      if (res.ok) {
-        setScanResult("Full scan completed. Check alerts for new results.");
-      } else {
-        setScanResult(data.error || "Full scan failed.");
-      }
-    } catch (err) {
-      setScanResult("Full scan failed: " + String(err));
-    } finally {
-      setScanLoading(false);
+  setScanLoading(true);
+  setScanResult(null);
+  try {
+    const res = await fetch("/api/trigger_full_scan", { method: "POST" });
+    await res.text(); // read text to avoid unhandled promise, but ignore it
+    if (res.ok) {
+      setScanResult("Full scan completed successfully! ✅"); // show success message
+    } else {
+      setScanResult("Full scan failed.");
     }
-  };
+  } catch (err) {
+    setScanResult("Full scan failed: " + String(err));
+  } finally {
+    setScanLoading(false);
+  }
+};
+
   const handleBack = () => {
     window.history.back();
   };

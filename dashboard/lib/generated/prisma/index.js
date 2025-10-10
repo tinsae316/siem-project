@@ -180,7 +180,7 @@ const config = {
       "value": "prisma-client-js"
     },
     "output": {
-      "value": "/home/bini/siem-project/dashboard/lib/generated/prisma",
+      "value": "/home/tinsae316/Documents/Projects/siem-project/dashboard/lib/generated/prisma",
       "fromEnvVar": null
     },
     "config": {
@@ -194,7 +194,7 @@ const config = {
       }
     ],
     "previewFeatures": [],
-    "sourceFilePath": "/home/bini/siem-project/dashboard/prisma/schema.prisma",
+    "sourceFilePath": "/home/tinsae316/Documents/Projects/siem-project/dashboard/prisma/schema.prisma",
     "isCustomOutput": true
   },
   "relativeEnvPaths": {

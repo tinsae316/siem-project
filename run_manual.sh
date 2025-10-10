@@ -31,6 +31,27 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# ---- Robust project path resolution ----
+# Directory where this script resides (project root assumed)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$SCRIPT_DIR"
+
+print_status "Detected project root: $PROJECT_ROOT"
+
+# Helper function to safely source env files
+safe_source_env() {
+    local env_path="$1"
+    if [ -f "$env_path" ]; then
+        set -a
+        # shellcheck disable=SC1090
+        source "$env_path"
+        set +a
+        print_status "Environment variables loaded from $env_path"
+    else
+        print_warning "$env_path not found"
+    fi
+}
+
 # Check if PostgreSQL is installed
 if ! command -v psql &> /dev/null; then
     print_error "PostgreSQL is not installed. Please install PostgreSQL first:"
@@ -109,29 +130,42 @@ else
     pip install fastapi uvicorn asyncpg psycopg[binary,pool] watchdog pydantic python-dotenv geoip2
 fi
 
-# Install Node.js dependencies
+# Install Node.js dependencies (inside dashboard/)
 print_status "Installing Node.js dependencies..."
-cd dashboard
-if [ -f package.json ]; then
-    npm install
-elsedatetime.datetime.utcnow()
-    print_error "package.json not found in dashboard directory"
+if [ -f dashboard/package.json ]; then
+    pushd dashboard > /dev/null
+    # prefer npm ci if package-lock.json exists, otherwise npm install
+    if [ -f package-lock.json ] || [ -f npm-shrinkwrap.json ]; then
+        npm ci
+    else
+        npm install
+    fi
+    popd > /dev/null
+else
+    print_error "dashboard/package.json not found. Please ensure the dashboard directory contains a package.json"
+    echo "You can create one with: (cd dashboard && npm init -y)"
     exit 1
 fi
 
 # Generate Prisma client
 print_status "Generating Prisma client..."
-npx prisma generate
+pushd dashboard > /dev/null
+npx prisma generate --schema=prisma/schema.prisma
+popd > /dev/null
 
-cd ..
 
 print_success "All dependencies installed!"
 
 print_status "Starting services..."
 
+# Ensure Python can import local packages (collector, etc.)
+export PYTHONPATH="$PROJECT_ROOT"
+print_status "PYTHONPATH set to $PYTHONPATH"
+
 # Start collector in background
 print_status "Starting collector (FastAPI) on port 8000..."
-set -a; source .env; set +a
+safe_source_env "$PROJECT_ROOT/.env"           # root .env for collector
+# Run collector as module so package imports like `from collector import ...` work
 python3 -m collector.main &
 COLLECTOR_PID=$!
 
@@ -140,33 +174,38 @@ sleep 5
 
 # Start dashboard in background
 print_status "Starting dashboard (Next.js) on port 3002..."
-cd dashboard
-set -a; source ../.env; set +a
+pushd "$PROJECT_ROOT/dashboard" > /dev/null
+safe_source_env "$PROJECT_ROOT/dashboard/.env" # dashboard specific env
 npm run dev &
 DASHBOARD_PID=$!
-cd ..
+popd > /dev/null
 
 # Wait a moment for dashboard to start
 sleep 10
 
-# Start detection scripts in background
+# Start detection scripts in background (only if detection folder exists)
 print_status "Starting detection scripts..."
-export PYTHONPATH=$(pwd)
-cd detection
+if [ -d "$PROJECT_ROOT/detection" ]; then
+    pushd "$PROJECT_ROOT/detection" > /dev/null
+    export PYTHONPATH="$PROJECT_ROOT"   # ensure detection scripts can import local packages
+    # Start brute force detection
+    python3 Hard_Bruteforce_Detection.py &
+    DETECTION_PID1=$!
 
-# Start brute force detection
-python3 Hard_Bruteforce_Detection.py &
-DETECTION_PID1=$!
+    # Start SQL injection detection
+    python3 Hard_SQL_Injection.py &
+    DETECTION_PID2=$!
 
-# Start SQL injection detection
-python3 Hard_SQL_Injection.py &
-DETECTION_PID2=$!
+    # Start XSS detection
+    python3 Hard_XSS_Detection.py &
+    DETECTION_PID3=$!
 
-# Start XSS detection
-python3 Hard_XSS_Detection.py &
-DETECTION_PID3=$!
+    popd > /dev/null
+else
+    print_warning "Detection directory not found at $PROJECT_ROOT/detection — skipping detection scripts"
+    DETECTION_PID1=DETECTION_PID2=DETECTION_PID3=0
+fi
 
-cd ..
 
 print_success "All services are running!"
 echo ""

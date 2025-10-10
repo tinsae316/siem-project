@@ -1,11 +1,13 @@
+# detection/Firewall_Denied_Detection.py
 import asyncio
 import datetime
 from collections import defaultdict, deque
 from psycopg.types.json import Json
-from collector.db import init_db  # reuse existing DB init
+from collector.db import init_db
 import ipaddress
-import math
 import logging
+import argparse
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("firewall-denied-detector")
@@ -18,7 +20,9 @@ CONFIG = {
     "whitelist_src_cidrs": ["10.0.0.0/8", "192.168.0.0/16"]
 }
 
-# ---------- Helpers ----------
+LAST_SCAN_FILE = "last_scan_firewall.txt"
+
+# ----------------- Helpers -----------------
 def ensure_dt(ts) -> datetime.datetime:
     if isinstance(ts, datetime.datetime):
         return ts if ts.tzinfo else ts.replace(tzinfo=datetime.timezone.utc)
@@ -32,13 +36,10 @@ def ensure_dt(ts) -> datetime.datetime:
 def normalize_ip(ip_str):
     if not ip_str:
         return None
-    if hasattr(ip_str, 'compressed'):
-        ip_str = str(ip_str)
     try:
         ip_obj = ipaddress.ip_address(ip_str)
         return str(ip_obj)
     except Exception:
-        # fallback: strip port if present
         if ":" in ip_str and ip_str.count(":") == 1:
             return ip_str.split(":")[0]
         return ip_str
@@ -55,13 +56,21 @@ def is_whitelisted(ip: str) -> bool:
         return False
     return False
 
-# ---------- Detection ----------
+def get_last_scan_time():
+    if os.path.exists(LAST_SCAN_FILE):
+        with open(LAST_SCAN_FILE, "r") as f:
+            return datetime.datetime.fromisoformat(f.read().strip())
+    return None
+
+def set_last_scan_time(ts):
+    with open(LAST_SCAN_FILE, "w") as f:
+        f.write(ts.isoformat())
+
+# ----------------- Detection -----------------
 class FirewallDeniedDetector:
     def __init__(self):
-        # key=src_ip -> deque of timestamps
-        self.blocked_attempts = defaultdict(deque)
-        # alert deduplication key -> last alert time
-        self.last_alert_time = {}
+        self.blocked_attempts = defaultdict(deque)  # key=src_ip -> deque of timestamps
+        self.last_alert_time = {}  # dedup key -> last alert time
 
     def detect(self, logs):
         alerts = []
@@ -82,21 +91,19 @@ class FirewallDeniedDetector:
             if event_type != "firewall" or outcome not in ["denied", "blocked"]:
                 continue
 
-            # record timestamp
-            self.blocked_attempts[src_ip].append(ts)
-
-            # expire old attempts
-            window_sec = CONFIG["window_minutes"] * 60
             dq = self.blocked_attempts[src_ip]
+            dq.append(ts)
+
+            # Remove old attempts outside window
+            window_sec = CONFIG["window_minutes"] * 60
             while dq and (ts - dq[0]).total_seconds() > window_sec:
                 dq.popleft()
 
-            # check threshold
             if len(dq) >= CONFIG["attempt_threshold"]:
                 alert_id = f"firewall_denied|{src_ip}|{dst_ip}"
                 last_alert = self.last_alert_time.get(alert_id)
                 if last_alert and (ts - last_alert).total_seconds() < CONFIG["alert_dedupe_seconds"]:
-                    continue  # dedup
+                    continue
                 score = min(10, len(dq) / CONFIG["attempt_threshold"] * 5)
                 alerts.append({
                     "rule": "Firewall Denied Access",
@@ -115,21 +122,32 @@ class FirewallDeniedDetector:
                 self.last_alert_time[alert_id] = ts
         return alerts
 
-# ---------- Fetch logs ----------
-async def fetch_firewall_logs(pool, limit=5000):
+# ----------------- Fetch logs -----------------
+async def fetch_firewall_logs(pool, limit=5000, since=None):
     logs = []
     try:
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
-                await cur.execute("""
-                    SELECT timestamp, username, source_ip, destination_ip, destination_port,
-                           category, outcome, raw, network
-                    FROM logs
-                    WHERE 'firewall' = ANY(category)
-                    ORDER BY timestamp DESC
-                    LIMIT %s
-                """, (limit,))
+                if since:
+                    await cur.execute("""
+                        SELECT timestamp, username, source_ip, destination_ip, destination_port,
+                               category, outcome, raw, network
+                        FROM logs
+                        WHERE 'firewall' = ANY(category) AND timestamp > %s
+                        ORDER BY timestamp ASC
+                        LIMIT %s
+                    """, (since, limit))
+                else:
+                    await cur.execute("""
+                        SELECT timestamp, username, source_ip, destination_ip, destination_port,
+                               category, outcome, raw, network
+                        FROM logs
+                        WHERE 'firewall' = ANY(category)
+                        ORDER BY timestamp ASC
+                        LIMIT %s
+                    """, (limit,))
                 rows = await cur.fetchall()
+
         for r in rows:
             raw = r[7] or {}
             network = r[8] or {}
@@ -146,7 +164,8 @@ async def fetch_firewall_logs(pool, limit=5000):
         logger.exception(f"[!] Error fetching logs: {e}")
     return logs
 
-# ---------- Insert alerts (batched) ----------
+# ----------------- Insert alerts -----------------
+# ----------------- Insert alerts -----------------
 async def insert_alerts(pool, alerts):
     if not alerts:
         return
@@ -155,6 +174,7 @@ async def insert_alerts(pool, alerts):
         timestamp, rule, user_name, source_ip,
         attempt_count, severity, technique, raw, score, evidence
     ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (timestamp, rule, source_ip) DO NOTHING;
     """
     params_list = []
     for alert in alerts:
@@ -177,26 +197,53 @@ async def insert_alerts(pool, alerts):
                 batch_size = CONFIG["db_batch_size"]
                 for i in range(0, len(params_list), batch_size):
                     await cur.executemany(insert_sql, params_list[i:i+batch_size])
-        logger.info(f"Saved {len(alerts)} alerts to DB")
+        logger.info(f"✅ Saved {len(alerts)} new alerts to DB (duplicates skipped).")
     except Exception as e:
         logger.exception("[!] Error inserting alerts into DB")
         for a in alerts:
             logger.debug("Alert data: %s", a)
 
-# ---------- Main Runner ----------
+# ----------------- Main Runner -----------------
 async def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--full-scan", action="store_true", help="Scan all logs, not just new ones.")
+    args = parser.parse_args()
+
     pool = await init_db()
-    logs = await fetch_firewall_logs(pool)
     detector = FirewallDeniedDetector()
-    alerts = detector.detect(logs)
-    if alerts:
-        await insert_alerts(pool, alerts)
-        for a in alerts:
-            logger.warning("[ALERT] %s - IP:%s User:%s Time:%s Count:%s Severity:%s",
-                           a["rule"], a["source.ip"], a["user.name"],
-                           a["@timestamp"], a["count"], a["severity"])
-    else:
-        logger.info("No denied firewall activity detected.")
+
+    if args.full_scan:
+        logger.info("Starting FULL scan of all firewall logs...")
+        logs = await fetch_firewall_logs(pool, limit=5000, since=None)
+        alerts = detector.detect(logs)
+        if alerts:
+            await insert_alerts(pool, alerts)
+            for a in alerts:
+                logger.warning("[ALERT] %s - IP:%s User:%s Time:%s Count:%s Severity:%s",
+                               a["rule"], a["source.ip"], a["user.name"],
+                               a["@timestamp"], a["count"], a["severity"])
+        else:
+            logger.info("No denied firewall activity detected (full scan).")
+        return
+
+    # --- Scheduled incremental scans ---
+    while True:
+        scan_time = datetime.datetime.now(datetime.timezone.utc)
+        logger.info(f"Starting scheduled scan for recent firewall logs at {scan_time.isoformat()}...")
+        last_scan = get_last_scan_time()
+        logs = await fetch_firewall_logs(pool, limit=5000, since=last_scan)
+        alerts = detector.detect(logs)
+        if alerts:
+            await insert_alerts(pool, alerts)
+            for a in alerts:
+                logger.warning("[ALERT] %s - IP:%s User:%s Time:%s Count:%s Severity:%s",
+                               a["rule"], a["source.ip"], a["user.name"],
+                               a["@timestamp"], a["count"], a["severity"])
+        else:
+            logger.info("No denied firewall activity detected.")
+
+        set_last_scan_time(scan_time)
+        await asyncio.sleep(40)
 
 if __name__ == "__main__":
     asyncio.run(main())
