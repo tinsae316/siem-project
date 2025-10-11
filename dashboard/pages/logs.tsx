@@ -1,8 +1,11 @@
+"use client";
+
 import { GetServerSideProps } from "next";
 import prisma from "../lib/prisma";
 import { verifyToken } from "../lib/auth";
 import * as cookie from "cookie";
 import Layout from "../components/Layout";
+import Sidebar from "../components/Sidebar";
 import { useState } from "react";
 
 interface Log {
@@ -51,51 +54,52 @@ export const getServerSideProps: GetServerSideProps<LogsPageProps> = async (ctx)
   }
 };
 
-const getOutcomeType = (outcome: string ): string  => {
-  if (!outcome) return "Unknown";
-
-  const outcomeLower = outcome.toLowerCase();
-  
-  if (outcomeLower.includes('success')) return "Success";
-  if (outcomeLower.includes('failure')) return "Failure";
-  if (outcomeLower.includes('denied')) return "Denied";
-
+// Helper functions
+const getOutcomeType = (outcome: string): string => {
+  const text = outcome?.toLowerCase() || "";
+  if (text.includes("success")) return "Success";
+  if (text.includes("failure")) return "Failure";
+  if (text.includes("denied")) return "Denied";
   return "Unknown";
 };
 
 const getOutcomeIcon = (outcome: string): string => {
-  switch(outcome) {
-    case "Success": return "✓";
-    case "Denied": return "!";
-    case "Failure": return "⚠";
-    case "Unknown": return "i";
-    default: return "i";
+  switch (outcome) {
+    case "Success":
+      return "✓";
+    case "Denied":
+      return "!";
+    case "Failure":
+      return "⚠";
+    default:
+      return "i";
   }
 };
 
 const getOutcomeColor = (outcome: string): string => {
-  switch(outcome) {
-    case "Success": return "#10b981";
-    case "Denied": return "#ef4444";
-    case "Failure": return "#f59e0b";
-    case "Unknown": return "#3b82f6";
-    default: return "#6b7280";
+  switch (outcome) {
+    case "Success":
+      return "#10b981";
+    case "Denied":
+      return "#ef4444";
+    case "Failure":
+      return "#f59e0b";
+    default:
+      return "#3b82f6";
   }
 };
 
 export default function LogsPage({ logs }: LogsPageProps) {
+  const [searchTerm, setSearchTerm] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("All Categories");
-  const [selectedType, setSelectedType] = useState("All Types");
 
-  // Calculate counts
+  // Stats
   const totalLogs = logs.length;
-  const errorCount = logs.filter(log => getOutcomeType(log.outcome) === "Denied").length;
-  const warningCount = logs.filter(log => getOutcomeType(log.outcome) === "Failure").length;
-  const successCount = logs.filter(log => getOutcomeType(log.outcome) === "Success").length;
-  const infoCount = logs.filter(log => getOutcomeType(log.outcome) === "Unknown").length;
+  const denied = logs.filter((l) => getOutcomeType(l.outcome) === "Denied").length;
+  const failures = logs.filter((l) => getOutcomeType(l.outcome) === "Failure").length;
+  const success = logs.filter((l) => getOutcomeType(l.outcome) === "Success").length;
+  const unknown = logs.filter((l) => getOutcomeType(l.outcome) === "Unknown").length;
 
   const handleFilter = (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,365 +108,145 @@ export default function LogsPage({ logs }: LogsPageProps) {
     if (endDate) query.append("endDate", endDate);
     window.location.href = `/logs?${query.toString()}`;
   };
-  
-  const handleBack = () => {
-    window.history.back();
-  };
 
-  const filteredLogs = logs.filter(log => {
-    const matchesSearch = !searchTerm || 
-      (log.message && log.message.toLowerCase().includes(searchTerm.toLowerCase()));
-    const matchesCategory = selectedCategory === "All Categories" || log.category === selectedCategory; 
-    const matchesType = selectedType === "All Types" || getOutcomeType(log.outcome) === selectedType;
-    
-    return matchesSearch && matchesCategory && matchesType;
-  });
+  const filteredLogs = logs.filter((log) =>
+    !searchTerm
+      ? true
+      : log.message?.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'numeric',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
+  const formatDate = (d: string) =>
+    new Date(d).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
     });
-  };
 
   return (
     <Layout>
-      <div style={{ 
-        display: 'flex', 
-        height: '100vh', 
-        backgroundColor: '#f8fafc',
-        overflow: 'hidden'
-    }}>
-      {/* Sidebar */}
-      <div style={{ 
-        width: '300px', 
-        backgroundColor: 'gray-50', 
-        padding: '20px',
-        borderRight: '1px solid #e2e8f0',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        overflowY: 'auto',
-        position: 'relative'
-      }}>
-        {/* Back Button */}
-        <button 
-          onClick={handleBack}
-          style={{
-            position: 'absolute',
-            top: '20px',
-            right: '20px',
-            padding: '8px 12px',
-            backgroundColor: '#f8fafc',
-            color: '#1e293b',
-            border: '1px solid #e2e8f0',
-            borderRadius: '6px',
-            fontSize: '12px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px'
-          }}
-        >
-          ← Back
-        </button>
+      <div className="flex bg-gray-50 min-h-screen pt-16">
+        <Sidebar />
 
-        <h2 style={{ marginBottom: '50px', color: '#1e293b', paddingRight: '60px' }}>System Logs</h2>
-        <p style={{ color: '#64748b', fontSize: '16px', marginBottom: '30px', fontWeight: 'bold' }}>
-          Monitor and analyze system events and activities
-        </p>
+        <main className="flex-1 ml-60 px-8 py-6 overflow-y-auto">
+          <h1 className="text-3xl font-bold text-gray-900 mb-6">Security Logs Overview</h1>
 
-        {/* Stats Cards */}
-        <div style={{ marginBottom: '30px' }}>
-          <div style={{ 
-            backgroundColor: '#f8fafc', 
-            padding: '15px', 
-            borderRadius: '8px',
-            marginBottom: '10px'
-          }}>
-            <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#64748b' }}>Total Logs</div>
-            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>{totalLogs}</div>
+          {/* Stat Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-6 mb-8">
+            <MetricCard title="Total Logs" value={totalLogs} color="gray" />
+            <MetricCard title="Denied" value={denied} color="red" />
+            <MetricCard title="Failures" value={failures} color="yellow" />
+            <MetricCard title="Success" value={success} color="green" />
+            <MetricCard title="Unknown" value={unknown} color="blue" />
           </div>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div style={{ 
-              backgroundColor: '#fef2f2', 
-              padding: '10px', 
-              borderRadius: '6px',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ef4444' }}>{errorCount}</div>
-              <div style={{ fontSize: '12px', color: '#ef4444' }}>Denieds</div>
-            </div>
-            
-            <div style={{ 
-              backgroundColor: '#fffbeb', 
-              padding: '10px', 
-              borderRadius: '6px',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#f59e0b' }}>{warningCount}</div>
-              <div style={{ fontSize: '12px', color: '#f59e0b' }}>Failures</div>
-            </div>
-            
-            <div style={{ 
-              backgroundColor: '#f0fdf4', 
-              padding: '10px', 
-              borderRadius: '6px',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#10b981' }}>{successCount}</div>
-              <div style={{ fontSize: '12px', color: '#10b981' }}>Success</div>
-            </div>
-            
-            <div style={{ 
-              backgroundColor: '#eff6ff', 
-              padding: '10px', 
-              borderRadius: '6px',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#3b82f6' }}>{infoCount}</div>
-              <div style={{ fontSize: '12px', color: '#3b82f6' }}>Unknown</div>
-            </div>
-          </div>
-        </div>
 
-        <div style={{ 
-          backgroundColor: '#f8fafc', 
-          padding: '15px', 
-          borderRadius: '8px',
-          marginBottom: '20px'
-        }}>
-          <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e293b', marginBottom: '15px' }}>
-           Database Logs
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e293b', marginBottom: '15px' }}>Filters</h3>
-          
-          <input
-            type="text"
-            placeholder="Search logs..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: '6px',
-              marginBottom: '15px',
-              fontSize: '14px'
-            }}
-          />
-          
-          <select 
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: '6px',
-              marginBottom: '15px',
-              fontSize: '14px',
-              backgroundColor: 'white'
-            }}
+          {/* Filters */}
+          <form
+            onSubmit={handleFilter}
+            className="flex flex-wrap gap-3 bg-white p-4 rounded-lg shadow-sm mb-8 border"
           >
-            <option>All Categories</option>
-            <option>Authentication</option>
-            <option>Firewall</option>
-            <option>Web</option>
-          </select>
-          
-          <select 
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: '6px',
-              marginBottom: '15px',
-              fontSize: '14px',
-              backgroundColor: 'white'
-            }}
-          >
-            <option>All Types</option>
-            <option>Denied</option>
-            <option>Failure</option>
-            <option>Success</option>
-            <option>Unknown</option>
-          </select>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px' }}>
+            <input
+              type="text"
+              placeholder="Search logs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="px-3 py-2 border rounded-lg border-gray-300 focus:ring-2 focus:ring-orange-400 flex-1 min-w-[180px]"
+            />
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              style={{
-                padding: '8px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '12px'
-              }}
+              className="px-3 py-2 border rounded-lg border-gray-300 focus:ring-2 focus:ring-orange-400"
             />
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              style={{
-                padding: '8px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '12px'
-              }}
+              className="px-3 py-2 border rounded-lg border-gray-300 focus:ring-2 focus:ring-orange-400"
             />
-          </div>
-          
-          <button 
-            onClick={handleFilter}
-            style={{
-              width: '100%',
-              padding: '10px',
-              backgroundColor: 'orange',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '14px',
-              cursor: 'pointer'
-            }}
-          >
-            Apply Filters
-          </button>
-        </div>
-      </div>
+            <button
+              type="submit"
+              className="bg-orange-600 text-white px-6 py-2 rounded-lg hover:bg-orange-700 transition font-medium"
+            >
+              Apply
+            </button>
+          </form>
 
-      {/* Main Content */}
-      <div style={{ 
-        flex: 1, 
-        padding: '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        overflow: 'hidden'
-      }}>
-        <div style={{ 
-          backgroundColor: 'white', 
-          borderRadius: '8px', 
-          padding: '20px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
-        }}>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
-            marginBottom: '20px',
-            flexShrink: 0
-          }}>
-            <h1 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1e293b' }}>
-              Log Entries ({filteredLogs.length})
-            </h1>
-          </div>
-
-          {/* Scrollable Logs Container */}
-          <div style={{
-            flex: 1,
-            overflowY: 'auto',
-            border: '1px solid #f1f5f9',
-            borderRadius: '6px'
-          }}>
-            {filteredLogs.length === 0 ? (
-              <div style={{ 
-                color: '#64748b', 
-                textAlign: 'center', 
-                padding: '40px',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                No logs found
+          {/* Logs Section */}
+            <section className="bg-white rounded-2xl shadow-md border flex flex-col h-[calc(100vh-200px)]">
+              {/* Sticky Header inside logs section */}
+              <div className="p-6 border-b sticky top-0 bg-white z-10 rounded-t-2xl">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Log Entries ({filteredLogs.length})
+                </h2>
               </div>
-            ) : (
-              <div>
-                {filteredLogs.map(log => {
-                  const outcomeType = getOutcomeType(log.outcome);
-                  return (
-                    <div key={log.id} style={{ 
-                      padding: '15px',
-                      borderBottom: '1px solid #f1f5f9',
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '15px'
-                    }}>
-                      <div style={{ 
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '50%',
-                        backgroundColor: getOutcomeColor(outcomeType),
-                        color: 'white',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        flexShrink: 0
-                      }}>
-                        {getOutcomeIcon(outcomeType || "Unknown")}
-                      </div>
-                      
-                      <div style={{ flex: 1 }}>
-                        <div style={{ 
-                          fontSize: '14px', 
-                          color: '#1e293b',
-                          marginBottom: '5px',
-                          fontWeight: log.message ? 'normal' : '300',
-                          fontStyle: log.message ? 'normal' : 'italic'
-                        }}>
-                          {log.message || "No message"}
+
+              {/* Scrollable log entries */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {filteredLogs.length === 0 ? (
+                  <div className="text-center text-gray-500 py-20">
+                    No logs found for the selected filters.
+                  </div>
+                ) : (
+                  filteredLogs.map((log) => {
+                    const outcome = getOutcomeType(log.outcome);
+                    return (
+                      <div
+                        key={log.id}
+                        className="flex items-start gap-4 border-b border-gray-200 pb-3"
+                      >
+                        <div
+                          className="w-8 h-8 flex items-center justify-center rounded-full text-white font-bold text-sm"
+                          style={{ backgroundColor: getOutcomeColor(outcome) }}
+                        >
+                          {getOutcomeIcon(outcome)}
                         </div>
-                        
-                        <div style={{ 
-                          fontSize: '12px', 
-                          color: '#64748b',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px'
-                        }}>
-                          <span>{formatDate(log.timestamp)}</span>
-                          <span style={{ color: '#d1d5db' }}>•</span>
-                          <span>{log.source_ip || "A system"}</span>
+                        <div className="flex-1">
+                          <p className="text-gray-900 font-medium text-base leading-relaxed">
+                            {log.message || "No message"}
+                          </p>
+                          <p className="text-sm text-gray-500 flex gap-2">
+                            <span>{formatDate(log.timestamp)}</span>•{" "}
+                            <span>{log.source_ip || "System"}</span>
+                          </p>
+                        </div>
+                        <div className="text-xs font-bold text-gray-700 px-3 py-1 bg-gray-100 rounded">
+                          {outcome}
                         </div>
                       </div>
-                      
-                      <div style={{ 
-                        padding: '4px 8px',
-                        backgroundColor: '#f8fafc',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        color: '#64748b',
-                        fontWeight: 'bold'
-                      }}>
-                        {outcomeType}
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </section>
+        </main>
       </div>
-    </div>
     </Layout>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  color,
+}: {
+  title: string;
+  value: number;
+  color: string;
+}) {
+  const colorMap: Record<string, string> = {
+    gray: "bg-gray-100 text-gray-700",
+    red: "bg-red-100 text-red-700",
+    yellow: "bg-yellow-100 text-yellow-700",
+    green: "bg-green-100 text-green-700",
+    blue: "bg-blue-100 text-blue-700",
+  };
+
+  return (
+    <div className={`rounded-lg p-6 shadow-sm border ${colorMap[color]}`}>
+      <h3 className="text-sm font-medium">{title}</h3>
+      <p className="text-3xl font-bold mt-1">{value}</p>
+    </div>
   );
 }

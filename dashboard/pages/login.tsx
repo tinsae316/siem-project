@@ -1,7 +1,28 @@
+// pages/login.tsx
+import { GetServerSideProps } from "next";
 import { useState } from "react";
 import { useRouter } from "next/router";
+import * as cookie from "cookie";
 import Layout from "../components/Layout";
 import { FiUser, FiLock } from "react-icons/fi";
+import { verifyToken } from "../lib/auth"; // your auth verification function
+
+export const getServerSideProps: GetServerSideProps = async (ctx) => {
+  const cookies = ctx.req.headers.cookie || "";
+  const { token } = cookie.parse(cookies);
+
+  // If token exists and is valid, redirect to dashboard
+  if (token) {
+    try {
+      verifyToken(token);
+      return { redirect: { destination: "/dashboard", permanent: false } };
+    } catch {
+      // Invalid token: continue to login page
+    }
+  }
+
+  return { props: {} };
+};
 
 export default function Login() {
   const router = useRouter();
@@ -24,27 +45,22 @@ export default function Login() {
       const data = await res.json();
 
       if (res.ok) {
-        // ✅ Optional: store token or session if your backend returns it
-        // localStorage.setItem("token", data.token);
-
-        // ✅ Redirect immediately (no state reset, no re-render)
-        router.replace("/dashboard");
-        return; // prevent running any code after redirect
+        router.replace("/dashboard"); // Redirect immediately
+        return;
       } else {
         setError(data.error || "Invalid username or password");
       }
     } catch (err) {
-      console.error(err);
       setError("An unexpected error occurred");
     } finally {
-      // ⚠️ Only reset loading state if login failed
       setIsCheckingAuth(false);
     }
   };
 
   return (
     <Layout>
-      <div className="flex items-center justify-center min-h-[80vh] p-4">
+      <div className="flex items-center justify-center min-h-[calc(100vh-64px)] p-4 mt-16">
+        {/* mt-16 pushes content below the fixed header */}
         <div className="w-full max-w-sm">
           <div className="bg-white rounded-lg border border-gray-200 p-8 shadow-sm">
             <div className="text-center mb-8">
@@ -58,10 +74,7 @@ export default function Login() {
 
             <form onSubmit={handleSubmit}>
               <div className="mb-4">
-                <label
-                  htmlFor="username"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
+                <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
                   Username or Email
                 </label>
                 <div className="relative">
@@ -81,10 +94,7 @@ export default function Login() {
               </div>
 
               <div className="mb-6">
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-medium text-gray-700 mb-1"
-                >
+                <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
                   Password
                 </label>
                 <div className="relative">

@@ -1,8 +1,11 @@
+"use client";
+
 import { GetServerSideProps } from "next";
 import prisma from "../lib/prisma";
 import { verifyToken } from "../lib/auth";
 import * as cookie from "cookie";
 import Layout from "../components/Layout";
+import Sidebar from "../components/Sidebar";
 import { useState } from "react";
 
 interface Alert {
@@ -41,9 +44,12 @@ export const getServerSideProps: GetServerSideProps<AlertsPageProps> = async (ct
       orderBy: { timestamp: "desc" },
     });
 
-    const alerts: Alert[] = alertsRaw.map(alert => ({
+    const alerts: Alert[] = alertsRaw.map((alert) => ({
       ...alert,
-      timestamp: alert.timestamp instanceof Date ? alert.timestamp.toISOString() : String(alert.timestamp),
+      timestamp:
+        alert.timestamp instanceof Date
+          ? alert.timestamp.toISOString()
+          : String(alert.timestamp),
     }));
 
     return { props: { alerts } };
@@ -52,48 +58,54 @@ export const getServerSideProps: GetServerSideProps<AlertsPageProps> = async (ct
   }
 };
 
-const getSeverityColor = (severity: string | null): string => {
+// Severity helpers
+const getSeverityColor = (severity: string | null) => {
   if (!severity) return "#6b7280";
-  switch(severity.toUpperCase()) {
-    case "CRITICAL": return "#ef4444";
-    case "HIGH": return "#f59e0b";
-    case "MEDIUM": return "#3b82f6";
-    case "LOW": return "#10b981";
-    default: return "#6b7280";
+  switch (severity.toUpperCase()) {
+    case "CRITICAL":
+      return "#ef4444";
+    case "HIGH":
+      return "#f59e0b";
+    case "MEDIUM":
+      return "#3b82f6";
+    case "LOW":
+      return "#10b981";
+    default:
+      return "#6b7280";
   }
 };
 
-const getSeverityIcon = (severity: string | null): string => {
+const getSeverityIcon = (severity: string | null) => {
   if (!severity) return "i";
-  switch(severity.toUpperCase()) {
-    case "CRITICAL": return "!";
-    case "HIGH": return "⚠";
-    case "MEDIUM": return "i";
-    case "LOW": return "✓";
-    default: return "i";
+  switch (severity.toUpperCase()) {
+    case "CRITICAL":
+      return "!";
+    case "HIGH":
+      return "⚠";
+    case "MEDIUM":
+      return "i";
+    case "LOW":
+      return "✓";
+    default:
+      return "i";
   }
 };
 
-const getAlertTitle = (alert: Alert) => {
-  if (alert.rule) return alert.rule;
-  if (alert.technique) return alert.technique;
-  return "Security Alert";
-};
+const getAlertTitle = (alert: Alert) => alert.rule || alert.technique || "Security Alert";
 
 const getAlertDescription = (alert: Alert) => {
-  if (alert.technique === "Credential Stuffing") {
-    return "Large-scale credential stuffing attack detected";
-  } else if (alert.technique === "XSS") {
-    return "Cross-site scripting attempt detected in user input";
-  } else if (alert.technique === "SQLi") {
-    return "SQL injection pattern detected in request parameters";
-  } else if (alert.technique === "Brute Force") {
-    return "Multiple failed login attempts from same IP";
-  } else if (alert.rule?.includes("Admin Account Creation")) {
-    return "Unauthorized admin account creation attempt";
-  } else if (alert.rule?.includes("Admin Role Assignment")) {
-    return "Admin role assignment without proper authorization";
-  }
+  if (alert.technique === "Credential Stuffing")
+    return "Large-scale credential stuffing attack detected.";
+  if (alert.technique === "XSS")
+    return "Cross-site scripting attempt detected in user input.";
+  if (alert.technique === "SQLi")
+    return "SQL injection pattern detected in request parameters.";
+  if (alert.technique === "Brute Force")
+    return "Multiple failed login attempts from the same IP.";
+  if (alert.rule?.includes("Admin Account Creation"))
+    return "Unauthorized admin account creation attempt detected.";
+  if (alert.rule?.includes("Admin Role Assignment"))
+    return "Admin role assignment without proper authorization.";
   return `Security event detected - ${alert.user_name || alert.source_ip || "Unknown source"}`;
 };
 
@@ -103,15 +115,12 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSeverity, setSelectedSeverity] = useState("All Severities");
   const [selectedTechnique, setSelectedTechnique] = useState("All Techniques");
-  const [scanLoading, setScanLoading] = useState(false);
-  const [scanResult, setScanResult] = useState<string | null>(null);
 
-  // Calculate counts
   const totalAlerts = alerts.length;
-  const criticalCount = alerts.filter(alert => alert.severity === "CRITICAL").length;
-  const highCount = alerts.filter(alert => alert.severity === "HIGH").length;
-  const mediumCount = alerts.filter(alert => alert.severity === "MEDIUM").length;
-  const lowCount = alerts.filter(alert => alert.severity === "LOW").length;
+  const critical = alerts.filter((a) => a.severity === "CRITICAL").length;
+  const high = alerts.filter((a) => a.severity === "HIGH").length;
+  const medium = alerts.filter((a) => a.severity === "MEDIUM").length;
+  const low = alerts.filter((a) => a.severity === "LOW").length;
 
   const handleFilter = (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,435 +130,185 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
     window.location.href = `/alerts?${query.toString()}`;
   };
 
-  const handleFullScan = async () => {
-  setScanLoading(true);
-  setScanResult(null);
-  try {
-    const res = await fetch("/api/trigger_full_scan", { method: "POST" });
-    await res.text(); // read text to avoid unhandled promise, but ignore it
-    if (res.ok) {
-      setScanResult("Full scan completed successfully! ✅"); // show success message
-    } else {
-      setScanResult("Full scan failed.");
-    }
-  } catch (err) {
-    setScanResult("Full scan failed: " + String(err));
-  } finally {
-    setScanLoading(false);
-  }
-};
+  const filteredAlerts = alerts.filter((alert) => {
+    const matchesSearch =
+      !searchTerm ||
+      alert.rule?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alert.technique?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      alert.user_name?.toLowerCase().includes(searchTerm.toLowerCase());
 
-  const handleBack = () => {
-    window.history.back();
-  };
+    const matchesSeverity =
+      selectedSeverity === "All Severities" ||
+      alert.severity === selectedSeverity.toUpperCase();
 
-  const filteredAlerts = alerts.filter(alert => {
-    const matchesSearch = !searchTerm || 
-      (alert.rule && alert.rule.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (alert.technique && alert.technique.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (alert.user_name && alert.user_name.toLowerCase().includes(searchTerm.toLowerCase()));
-    
-    const matchesSeverity = selectedSeverity === "All Severities" || alert.severity === selectedSeverity.toUpperCase();
-    const matchesTechnique = selectedTechnique === "All Techniques" || alert.technique === selectedTechnique;
-    
+    const matchesTechnique =
+      selectedTechnique === "All Techniques" ||
+      alert.technique === selectedTechnique;
+
     return matchesSearch && matchesSeverity && matchesTechnique;
   });
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'numeric',
-      day: 'numeric',
-      year: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
+  const formatDate = (d: string) =>
+    new Date(d).toLocaleString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
     });
-  };
 
   return (
     <Layout>
-    <div style={{ 
-      display: 'flex', 
-      height: '100vh', 
-      backgroundColor: '#f8fafc',
-      overflow: 'hidden'
-    }}>
-      {/* Sidebar */}
-      <div style={{ 
-        width: '300px', 
-        backgroundColor: 'white', 
-        padding: '20px',
-        borderRight: '1px solid #e2e8f0',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-        overflowY: 'auto',
-        position: 'relative'
-      }}>
-        {/* Back Button */}
-        <button 
-          onClick={handleBack}
-          style={{
-            position: 'absolute',
-            top: '20px',
-            right: '20px',
-            padding: '8px 12px',
-            backgroundColor: '#f8fafc',
-            color: '#64748b',
-            border: '1px solid #e2e8f0',
-            borderRadius: '6px',
-            fontSize: '12px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '4px'
-          }}
-        >
-          ← Back
-        </button>
+      <div className="flex bg-gray-50 min-h-screen pt-16">
+        <Sidebar />
 
-        <h2 style={{ marginBottom: '30px', color: '#1e293b', paddingRight: '60px' }}>Security Alerts</h2>
-        <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '30px' }}>
-          Monitor and analyze security events and threats
-        </p>
+        <main className="flex-1 ml-60 px-8 py-6 overflow-y-auto">
+          <h1 className="text-3xl font-bold text-gray-900 mb-6">Security Alerts Overview</h1>
 
-        {/* Stats Cards */}
-        <div style={{ marginBottom: '30px' }}>
-          <div style={{ 
-            backgroundColor: '#f8fafc', 
-            padding: '15px', 
-            borderRadius: '8px',
-            marginBottom: '10px'
-          }}>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Total Alerts</div>
-            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>{totalAlerts}</div>
+          {/* Stat Cards */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-6 mb-8">
+            <MetricCard title="Total Alerts" value={totalAlerts} color="gray" />
+            <MetricCard title="Critical" value={critical} color="red" />
+            <MetricCard title="High" value={high} color="yellow" />
+            <MetricCard title="Medium" value={medium} color="blue" />
+            <MetricCard title="Low" value={low} color="green" />
           </div>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-            <div style={{ 
-              backgroundColor: '#fef2f2', 
-              padding: '10px', 
-              borderRadius: '6px',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#ef4444' }}>{criticalCount}</div>
-              <div style={{ fontSize: '12px', color: '#ef4444' }}>Critical</div>
-            </div>
-            
-            <div style={{ 
-              backgroundColor: '#fffbeb', 
-              padding: '10px', 
-              borderRadius: '6px',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#f59e0b' }}>{highCount}</div>
-              <div style={{ fontSize: '12px', color: '#f59e0b' }}>High</div>
-            </div>
-            
-            <div style={{ 
-              backgroundColor: '#eff6ff', 
-              padding: '10px', 
-              borderRadius: '6px',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#3b82f6' }}>{mediumCount}</div>
-              <div style={{ fontSize: '12px', color: '#3b82f6' }}>Medium</div>
-            </div>
-            
-            <div style={{ 
-              backgroundColor: '#f0fdf4', 
-              padding: '10px', 
-              borderRadius: '6px',
-              textAlign: 'center'
-            }}>
-              <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#10b981' }}>{lowCount}</div>
-              <div style={{ fontSize: '12px', color: '#10b981' }}>Low</div>
-            </div>
-          </div>
-        </div>
 
-        <div style={{ 
-          backgroundColor: '#f8fafc', 
-          padding: '15px', 
-          borderRadius: '8px',
-          marginBottom: '20px'
-        }}>
-          <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e293b', marginBottom: '15px' }}>
-            Threat Detection
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div>
-          <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e293b', marginBottom: '15px' }}>Filters</h3>
-          
-          <input
-            type="text"
-            placeholder="Search alerts..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: '6px',
-              marginBottom: '15px',
-              fontSize: '14px'
-            }}
-          />
-          
-          <select 
-            value={selectedSeverity}
-            onChange={(e) => setSelectedSeverity(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: '6px',
-              marginBottom: '15px',
-              fontSize: '14px',
-              backgroundColor: 'white'
-            }}
+          {/* Filters */}
+          <form
+            onSubmit={handleFilter}
+            className="flex flex-wrap gap-3 bg-white p-4 rounded-lg shadow-sm mb-8 border"
           >
-            <option>All Severities</option>
-            <option>CRITICAL</option>
-            <option>HIGH</option>
-            <option>MEDIUM</option>
-            <option>LOW</option>
-          </select>
-          
-          <select 
-            value={selectedTechnique}
-            onChange={(e) => setSelectedTechnique(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px',
-              border: '1px solid #d1d5db',
-              borderRadius: '6px',
-              marginBottom: '15px',
-              fontSize: '14px',
-              backgroundColor: 'white'
-            }}
-          >
-            <option>All Techniques</option>
-            <option>brute_force</option>
-            <option>credential_stuffing</option>
-            <option>distributed_bruteforce</option>
-            <option>data_exfiltration</option>
-            <option>endpoint_scanning</option>
-            <option>network_denial</option>
-            <option>port_scanning</option>
-            <option>privilege_escalation</option>
-            <option>protocol_misuse</option>
-            <option>SQLi</option>
-            <option>XSS</option>
-          </select>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '15px' }}>
+            <input
+              type="text"
+              placeholder="Search alerts..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="px-3 py-2 border rounded-lg border-gray-300 focus:ring-2 focus:ring-orange-400 flex-1 min-w-[180px]"
+            />
+            <select
+              value={selectedSeverity}
+              onChange={(e) => setSelectedSeverity(e.target.value)}
+              className="px-3 py-2 border rounded-lg border-gray-300 focus:ring-2 focus:ring-orange-400"
+            >
+              <option>All Severities</option>
+              <option>CRITICAL</option>
+              <option>HIGH</option>
+              <option>MEDIUM</option>
+              <option>LOW</option>
+            </select>
+            <select
+              value={selectedTechnique}
+              onChange={(e) => setSelectedTechnique(e.target.value)}
+              className="px-3 py-2 border rounded-lg border-gray-300 focus:ring-2 focus:ring-orange-400"
+            >
+              <option>All Techniques</option>
+              <option>Brute Force</option>
+              <option>Credential Stuffing</option>
+              <option>SQLi</option>
+              <option>XSS</option>
+            </select>
             <input
               type="date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              style={{
-                padding: '8px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '12px'
-              }}
+              className="px-3 py-2 border rounded-lg border-gray-300 focus:ring-2 focus:ring-orange-400"
             />
             <input
               type="date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              style={{
-                padding: '8px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '12px'
-              }}
+              className="px-3 py-2 border rounded-lg border-gray-300 focus:ring-2 focus:ring-orange-400"
             />
-          </div>
-          
-          <button 
-            onClick={handleFilter}
-            style={{
-              width: '100%',
-              padding: '10px',
-              backgroundColor: 'orange',
-              color: 'white',
-              border: 'none',
-              borderRadius: '6px',
-              fontSize: '14px',
-              cursor: 'pointer'
-            }}
-          >
-            Apply Filters
-          </button>
-        </div>
-        <button
-          onClick={handleFullScan}
-          disabled={scanLoading}
-          style={{
-            width: '100%',
-            padding: '10px',
-            backgroundColor: scanLoading ? '#d1d5db' : '#10b981',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            fontSize: '14px',
-            cursor: scanLoading ? 'not-allowed' : 'pointer',
-            marginBottom: '15px',
-            marginTop: '10px',
-            fontWeight: 'bold'
-          }}
-        >
-          {scanLoading ? 'Running Full Scan...' : 'Run Full Scan'}
-        </button>
-        {scanResult && (
-          <div style={{ color: scanResult.includes('completed') ? '#10b981' : '#ef4444', fontSize: '13px', marginTop: '8px' }}>{scanResult}</div>
-        )}
-      </div>
+            <button
+              type="submit"
+              className="bg-orange-600 text-white px-6 py-2 rounded-lg hover:bg-orange-700 transition font-medium"
+            >
+              Apply
+            </button>
+          </form>
 
-      {/* Main Content */}
-      <div style={{ 
-        flex: 1, 
-        padding: '20px',
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100vh',
-        overflow: 'hidden'
-      }}>
-        <div style={{ 
-          backgroundColor: 'white', 
-          borderRadius: '8px', 
-          padding: '20px',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden'
-        }}>
-          <div style={{ 
-            display: 'flex', 
-            justifyContent: 'space-between', 
-            alignItems: 'center',
-            marginBottom: '20px',
-            flexShrink: 0
-          }}>
-            <h1 style={{ fontSize: '18px', fontWeight: 'bold', color: '#1e293b' }}>
-              Security Alerts ({filteredAlerts.length})
-            </h1>
-          </div>
-
-          {/* Scrollable Alerts Container */}
-          <div style={{
-            flex: 1,
-            overflowY: 'auto',
-            border: '1px solid #f1f5f9',
-            borderRadius: '6px'
-          }}>
-            {filteredAlerts.length === 0 ? (
-              <div style={{ 
-                color: '#64748b', 
-                textAlign: 'center', 
-                padding: '40px',
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center'
-              }}>
-                No alerts found
+          {/* Alerts List */}
+            <section className="bg-white rounded-2xl shadow-md border flex flex-col h-[calc(100vh-200px)]">
+              {/* Sticky header for alert section */}
+              <div className="p-6 border-b sticky top-0 bg-white z-10 rounded-t-2xl">
+                <h2 className="text-xl font-semibold text-gray-900">
+                  Alert Entries ({filteredAlerts.length})
+                </h2>
               </div>
-            ) : (
-              <div>
-                {filteredAlerts.map(alert => {
-                  const severity = alert.severity || "UNKNOWN";
-                  return (
-                    <div key={alert.id} style={{ 
-                      padding: '15px',
-                      borderBottom: '1px solid #f1f5f9',
-                      display: 'flex',
-                      alignItems: 'flex-start',
-                      gap: '15px'
-                    }}>
-                      <div style={{ 
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '50%',
-                        backgroundColor: getSeverityColor(severity),
-                        color: 'white',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '12px',
-                        fontWeight: 'bold',
-                        flexShrink: 0
-                      }}>
-                        {getSeverityIcon(severity)}
+
+              {/* Scrollable alert entries */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                {filteredAlerts.length === 0 ? (
+                  <div className="text-center text-gray-500 py-20">
+                    No alerts found for the selected filters.
+                  </div>
+                ) : (
+                  filteredAlerts.map((alert) => (
+                    <div
+                      key={alert.id}
+                      className="flex items-start gap-4 border-b border-gray-200 pb-3"
+                    >
+                      <div
+                        className="w-8 h-8 flex items-center justify-center rounded-full text-white font-bold text-sm"
+                        style={{ backgroundColor: getSeverityColor(alert.severity) }}
+                      >
+                        {getSeverityIcon(alert.severity)}
                       </div>
-                      
-                      <div style={{ flex: 1 }}>
-                        <div style={{ 
-                          fontSize: '14px', 
-                          color: '#1e293b',
-                          marginBottom: '5px',
-                          fontWeight: 'bold'
-                        }}>
+                      <div className="flex-1">
+                        <p className="text-gray-900 font-medium text-base leading-relaxed">
                           {getAlertTitle(alert)}
-                        </div>
-                        
-                        <div style={{ 
-                          fontSize: '13px', 
-                          color: '#64748b',
-                          marginBottom: '5px'
-                        }}>
+                        </p>
+                        <p className="text-sm text-gray-500">
                           {getAlertDescription(alert)}
-                        </div>
-                        
-                        <div style={{ 
-                          fontSize: '12px', 
-                          color: '#64748b',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '10px'
-                        }}>
-                          <span>{formatDate(alert.timestamp)}</span>
-                          <span style={{ color: '#d1d5db' }}>•</span>
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1 flex flex-wrap gap-2">
+                          <span>{formatDate(alert.timestamp)}</span>•{" "}
                           <span>{alert.source_ip || "Unknown IP"}</span>
-                          {alert.user_name && (
-                            <>
-                              <span style={{ color: '#d1d5db' }}>•</span>
-                              <span>{alert.user_name}</span>
-                            </>
-                          )}
+                          {alert.user_name && <>• <span>{alert.user_name}</span></>}
                           {alert.attempt_count && (
-                            <>
-                              <span style={{ color: '#d1d5db' }}>•</span>
-                              <span>{alert.attempt_count} attempts</span>
-                            </>
+                            <>• <span>{alert.attempt_count} attempts</span></>
                           )}
-                        </div>
+                        </p>
                       </div>
-                      
-                      <div style={{ 
-                        padding: '4px 8px',
-                        backgroundColor: '#f8fafc',
-                        borderRadius: '4px',
-                        fontSize: '11px',
-                        color: getSeverityColor(severity),
-                        fontWeight: 'bold',
-                        border: `1px solid ${getSeverityColor(severity)}20`
-                      }}>
-                        {severity}
+                      <div
+                        className="text-xs font-bold text-gray-700 px-3 py-1 bg-gray-100 rounded"
+                        style={{ color: getSeverityColor(alert.severity) }}
+                      >
+                        {alert.severity || "UNKNOWN"}
                       </div>
                     </div>
-                  );
-                })}
+                  ))
+                )}
               </div>
-            )}
-          </div>
-        </div>
+            </section>
+        </main>
       </div>
-    </div>
     </Layout>
+  );
+}
+
+function MetricCard({
+  title,
+  value,
+  color,
+}: {
+  title: string;
+  value: number;
+  color: string;
+}) {
+  const colorMap: Record<string, string> = {
+    gray: "bg-gray-100 text-gray-700",
+    red: "bg-red-100 text-red-700",
+    yellow: "bg-yellow-100 text-yellow-700",
+    blue: "bg-blue-100 text-blue-700",
+    green: "bg-green-100 text-green-700",
+  };
+
+  return (
+    <div className={`rounded-lg p-6 shadow-sm border ${colorMap[color]}`}>
+      <h3 className="text-sm font-medium">{title}</h3>
+      <p className="text-3xl font-bold mt-1">{value}</p>
+    </div>
   );
 }
