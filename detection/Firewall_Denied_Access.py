@@ -8,6 +8,14 @@ import ipaddress
 import logging
 import argparse
 import os
+import warnings # <-- Added for warning filter
+
+# Suppress the known psycopg_pool RuntimeWarning about pool opening
+warnings.filterwarnings(
+    "ignore", 
+    message="opening the async pool AsyncConnectionPool in the constructor is deprecated and will not be supported anymore in a future release.",
+    category=RuntimeWarning
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("firewall-denied-detector")
@@ -102,8 +110,13 @@ class FirewallDeniedDetector:
             if len(dq) >= CONFIG["attempt_threshold"]:
                 alert_id = f"firewall_denied|{src_ip}|{dst_ip}"
                 last_alert = self.last_alert_time.get(alert_id)
+                
+                # --- CHANGE START: Deduplicate at the generation point ---
                 if last_alert and (ts - last_alert).total_seconds() < CONFIG["alert_dedupe_seconds"]:
-                    continue
+                    # Skip alert generation if it's a duplicate based on the time window
+                    continue 
+                # --- CHANGE END ---
+                
                 score = min(10, len(dq) / CONFIG["attempt_threshold"] * 5)
                 alerts.append({
                     "rule": "Firewall Denied Access",
@@ -165,7 +178,6 @@ async def fetch_firewall_logs(pool, limit=5000, since=None):
     return logs
 
 # ----------------- Insert alerts -----------------
-# ----------------- Insert alerts -----------------
 async def insert_alerts(pool, alerts):
     if not alerts:
         return
@@ -218,6 +230,7 @@ async def main():
         alerts = detector.detect(logs)
         if alerts:
             await insert_alerts(pool, alerts)
+            # The logger.warning calls here now only print non-deduplicated alerts
             for a in alerts:
                 logger.warning("[ALERT] %s - IP:%s User:%s Time:%s Count:%s Severity:%s",
                                a["rule"], a["source.ip"], a["user.name"],

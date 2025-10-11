@@ -2,7 +2,7 @@ filebeat.inputs:
   - type: log
     enabled: true
     paths:
-      - /home/tinsae316/Documents/Projects/siem-project/test_logs/test.log
+      - /home/tinsae316/Documents/Projects/siem-project/test_logs/test.log 
 
 output.http:
   hosts: ["http://localhost:8000/collect"]

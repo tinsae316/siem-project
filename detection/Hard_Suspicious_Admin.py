@@ -9,6 +9,17 @@ from ipaddress import IPv4Address, IPv6Address
 
 LAST_SCAN_FILE = "last_scan_suspicious_admin.txt"
 
+# --- CONFIGURATION (Added alert_dedupe_seconds) ---
+CONFIG = {
+    "window_minutes": 5,
+    "max_admin_creations": 1,
+    "alert_dedupe_seconds": 3600, # Set a long dedupe window (1 hour) for critical events like this
+}
+
+# --- GLOBAL DEDUPLICATION STATE ---
+# Key: Rule|User (the creator) -> Value: last alert timestamp
+LAST_ALERT_TIME = {}
+
 # ---------------- Helpers ----------------
 def ensure_dt(ts):
     if isinstance(ts, datetime.datetime):
@@ -60,13 +71,17 @@ async def fetch_admin_logs(pool, since=None):
                 })
             return logs
 
-# ---------------- Detection ----------------
+# ---------------- Detection (Updated for Deduplication) ----------------
 KNOWN_ADMINS = {"bob", "superuser"}
 
-def detect_suspicious_admin_creation(logs, known_admins=KNOWN_ADMINS, window_minutes=5, max_admin_creations=1):
+def detect_suspicious_admin_creation(logs, known_admins=KNOWN_ADMINS):
     alerts = []
     keywords = ["new admin", "added to admin group", "grant admin", "privilege escalation", "sudo useradd"]
     creations = defaultdict(list)
+    
+    window_minutes = CONFIG["window_minutes"]
+    max_admin_creations = CONFIG["max_admin_creations"]
+    dedupe_window_sec = CONFIG["alert_dedupe_seconds"]
 
     for log in logs:
         if log["event"]["category"] == "authentication" and log["event"]["outcome"] == "success":
@@ -77,26 +92,52 @@ def detect_suspicious_admin_creation(logs, known_admins=KNOWN_ADMINS, window_min
             if any(k in msg for k in keywords):
                 creations[creator].append(ts)
                 recent = [t for t in creations[creator] if (ts - t).total_seconds() <= window_minutes * 60]
+                creations[creator] = recent # Keep state clean
 
-                severity = "CRITICAL" if creator not in known_admins or len(recent) > max_admin_creations else "HIGH"
+                # Only proceed if there's an actual incident (e.g., more than one creation by a known admin)
+                # or if an unknown user is creating anything.
+                is_suspicious = (creator not in known_admins and len(recent) >= 1) or \
+                                (creator in known_admins and len(recent) > max_admin_creations)
+                
+                if is_suspicious:
+                    
+                    # --- Deduplication Check ---
+                    # Dedupe based on the *creator* user, as this is a single incident type.
+                    alert_id = f"Suspicious Admin Account Creation|{creator}"
+                    last_alert_ts = LAST_ALERT_TIME.get(alert_id)
+                    
+                    # Check: Skip alert creation if a recent alert already exists for this creator
+                    if last_alert_ts and (ts - last_alert_ts).total_seconds() < dedupe_window_sec:
+                        continue
+                    # --- End Deduplication Check ---
+                    
+                    # Determine severity and prepare IP
+                    severity = "CRITICAL" if creator not in known_admins or len(recent) > max_admin_creations else "HIGH"
 
-                src_ip = log["source"]["ip"]
-                if isinstance(src_ip, (IPv4Address, IPv6Address)):
-                    src_ip = str(src_ip)
-
-                alerts.append({
-                    "rule": "Suspicious Admin Account Creation",
-                    "user.name": creator,
-                    "source.ip": src_ip,
-                    "@timestamp": ts.isoformat(),
-                    "severity": severity,
-                    "attack.technique": "privilege_escalation",
-                    "message": log["message"]
-                })
+                    src_ip = log["source"]["ip"]
+                    if isinstance(src_ip, (IPv4Address, IPv6Address)):
+                        src_ip = str(src_ip)
+                        
+                    # Create the alert only if it passes the deduplication check
+                    alerts.append({
+                        "rule": "Suspicious Admin Account Creation",
+                        "user.name": creator,
+                        "source.ip": src_ip,
+                        "@timestamp": ts.isoformat(),
+                        "severity": severity,
+                        "attack.technique": "privilege_escalation",
+                        "message": log["message"],
+                        "count": len(recent) # Added count for consistency
+                    })
+                    
+                    # Update the last alert time
+                    LAST_ALERT_TIME[alert_id] = ts
+                    
     return alerts
 
 # ---------------- Insert alerts ----------------
 async def insert_alert_into_db(pool, alert: dict):
+    # insert_sql already has ON CONFLICT (timestamp, rule, source_ip) DO NOTHING;
     insert_sql = """
     INSERT INTO alerts (
         timestamp, rule, user_name, source_ip,
@@ -114,7 +155,7 @@ async def insert_alert_into_db(pool, alert: dict):
     if isinstance(src_ip, (IPv4Address, IPv6Address)):
         src_ip = str(src_ip)
 
-    # Convert any non-serializable fields to string
+    # Convert any non-serializable fields to string for JSONB
     raw_copy = {}
     for k, v in alert.items():
         if isinstance(v, (datetime.datetime, datetime.date, IPv4Address, IPv6Address)):
@@ -127,7 +168,7 @@ async def insert_alert_into_db(pool, alert: dict):
         "rule": alert.get("rule"),
         "user_name": alert.get("user.name"),
         "source_ip": src_ip,
-        "attempt_count": 1,
+        "attempt_count": alert.get("count", 1), # Use count from detection logic
         "severity": alert.get("severity"),
         "technique": alert.get("attack.technique"),
         "raw": Json(raw_copy)
@@ -155,18 +196,37 @@ async def main():
         logs = await fetch_admin_logs(pool, since=None)
         alerts = detect_suspicious_admin_creation(logs)
         for alert in alerts:
+            # Print the alert only if it passed the in-memory check
+            print(f"[ALERT] {alert['rule']} - User:{alert['user.name']} IP:{alert['source.ip']} Attempts:{alert['count']} Severity:{alert['severity']}")
             await insert_alert_into_db(pool, alert)
-        print("[✅] Suspicious Admin Scan complete.")
+        print(f"[✅] Suspicious Admin Scan complete. Generated {len(alerts)} non-deduplicated alerts.")
         return
 
     while True:
         scan_time = datetime.datetime.now(datetime.timezone.utc)
         last_scan = get_last_scan_time()
         print(f"[*] Scheduled scan starting at {scan_time.isoformat()}...")
-        logs = await fetch_admin_logs(pool, since=last_scan)
+        
+        # Clear the LAST_ALERT_TIME state for the incremental scan to re-evaluate
+        global LAST_ALERT_TIME
+        LAST_ALERT_TIME = {}
+        
+        # Fetch a wider window of logs to ensure detection logic works correctly
+        lookback_time = scan_time - datetime.timedelta(minutes=CONFIG["window_minutes"])
+        logs = await fetch_admin_logs(pool, since=lookback_time)
+        
         alerts = detect_suspicious_admin_creation(logs)
+        
         for alert in alerts:
+            # Print the alert only if it passed the in-memory check
+            print(f"[ALERT] {alert['rule']} - User:{alert['user.name']} IP:{alert['source.ip']} Attempts:{alert['count']} Severity:{alert['severity']}")
             await insert_alert_into_db(pool, alert)
+        
+        if not alerts:
+            print("[*] No suspicious admin creation detected.")
+        else:
+            print(f"[*] Completed scheduled scan. Generated {len(alerts)} non-deduplicated alerts.")
+            
         set_last_scan_time(scan_time)
         await asyncio.sleep(40)
 

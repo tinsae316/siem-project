@@ -1,4 +1,3 @@
-# detection/DoS_DDoS_Detection.py
 import asyncio
 import datetime
 import os
@@ -86,17 +85,29 @@ class FirewallFloodDetector:
 
             if not src_ip or is_whitelisted(src_ip):
                 continue
-            if event_type != "firewall" or outcome not in ["denied", "blocked"]:
+            
+            # Ensure event_type is checked correctly (as list in DB, or string in log)
+            if isinstance(event_type, list):
+                if "firewall" not in event_type:
+                    continue
+            elif event_type != "firewall":
+                continue
+            
+            if outcome not in ["denied", "blocked"]:
                 continue
 
             dq = self.blocked_attempts[src_ip]
             dq.append(ts)
+            
+            # Sliding window logic
             while dq and (ts - dq[0]).total_seconds() > CONFIG["window_seconds"]:
                 dq.popleft()
 
             if len(dq) >= CONFIG["threshold"]:
                 alert_id = f"firewall_flood|{src_ip}"
                 last_alert = self.last_alert_time.get(alert_id)
+                
+                # Deduplication check
                 if last_alert and (ts - last_alert).total_seconds() < CONFIG["alert_dedupe_seconds"]:
                     continue
 
@@ -112,7 +123,6 @@ class FirewallFloodDetector:
                     "evidence": f"{len(dq)} denied requests in {CONFIG['window_seconds']} seconds"
                 })
                 self.last_alert_time[alert_id] = ts
-                dq.clear()
         return alerts
 
 # ---------------- DB ----------------
@@ -154,34 +164,42 @@ async def fetch_firewall_logs(pool, limit=10000, since=None):
 async def insert_alerts(pool, alerts):
     if not alerts:
         return
+    # FIX: Added 'user_name' to the INSERT columns list.
     insert_sql = """
     INSERT INTO alerts (
-        timestamp, rule, source_ip,
-        attempt_count, severity, technique, raw, score, evidence
-    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        timestamp, rule, user_name, source_ip,
+        attempt_count, severity, technique, raw
+    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    ON CONFLICT (timestamp, rule, source_ip) DO NOTHING;
     """
     params_list = []
     for alert in alerts:
         ts_val = ensure_dt(alert["@timestamp"])
+        
+        # Ensure raw object is JSON serializable
+        raw_copy = {k: (str(v) if isinstance(v, (datetime.datetime, ipaddress.IPv4Address, ipaddress.IPv6Address)) else v)
+                    for k, v in alert.items()}
+        
+        # FIX: Added 'None' for the user_name column
         params_list.append((
             ts_val,
             alert["rule"],
+            None,  # <-- Added value for user_name column
             alert["source.ip"],
             alert["count"],
             alert["severity"],
             alert["attack.technique"],
-            Json(alert),
-            alert["score"],
-            alert["evidence"]
+            Json(raw_copy),
         ))
 
     try:
         async with pool.connection() as conn:
             async with conn.cursor() as cur:
                 batch_size = CONFIG["db_batch_size"]
+                # The executemany call must now match the 8 placeholders in insert_sql
                 for i in range(0, len(params_list), batch_size):
                     await cur.executemany(insert_sql, params_list[i:i+batch_size])
-        logger.info(f"Saved {len(alerts)} alerts to DB")
+        logger.info(f"✅ Saved {len(alerts)} alerts to DB (duplicates skipped).")
     except Exception as e:
         logger.exception("[!] Error inserting alerts into DB")
 
@@ -203,13 +221,21 @@ async def main():
                 logger.warning("[ALERT] %s - Source:%s Count:%s Severity:%s",
                                a["rule"], a["source.ip"], a["count"], a["severity"])
             await insert_alerts(pool, alerts)
+        else:
+            logger.info("No DoS/DDoS detected (full scan).")
         return
 
     while True:
         scan_time = datetime.datetime.now(datetime.timezone.utc)
-        last_scan = get_last_scan_time()
         logger.info(f"[{scan_time.isoformat()}] Starting scheduled DoS/DDoS scan...")
-        logs = await fetch_firewall_logs(pool, limit=10000, since=last_scan)
+        
+        # Fetch logs for the full time window to maintain accurate rate state
+        lookback_time = scan_time - datetime.timedelta(seconds=CONFIG["window_seconds"])
+        
+        # Clear rate state for the incremental scan to avoid accumulating irrelevant past data
+        detector.blocked_attempts.clear()
+        
+        logs = await fetch_firewall_logs(pool, limit=10000, since=lookback_time)
         alerts = detector.detect(logs)
 
         if alerts:
