@@ -1,6 +1,7 @@
 // pages/index.tsx
 import Link from "next/link";
 import { FiEye, FiAlertTriangle, FiBarChart2, FiLock, FiUsers, FiGlobe, FiMail } from "react-icons/fi";
+import Layout from "../components/Layout";
 
 const features = [
   {
@@ -37,17 +38,30 @@ const features = [
 
 export default function Home() {
   return (
-    <div className="bg-gray-50 min-h-screen">
+    <Layout>
+    <div className="bg-gray-50 min-h-[100vh]">
       {/* Hero Section */}
-       <header className="text-center py-6 bg-white"> {/* Changed from py-10 to py-6 */}
-        <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-2"> {/* Changed from mb-4 to mb-2 */}
-          Secure Your <span className="text-orange-600">Digital Infrastructure</span>
+        <header className="flex flex-col items-center justify-center min-h-[30vh] text-center bg-white px-4">
+         <h1 className="text-4xl md:text-5xl font-bold text-gray-900 mb-4">
+           Secure Your <span className="text-orange-600">Digital Infrastructure</span>
         </h1>
-        <p className="text-gray-600 max-w-2xl mx-auto mb-4"> {/* Changed from mb-8 to mb-4 */}
-          Advanced SIEM Dashboard providing real-time threat detection,
+      <p className="text-gray-600 max-w-2xl mx-auto mb-8">
+               Advanced SIEM Dashboard providing real-time threat detection,
           comprehensive security monitoring, and intelligent incident response for enterprise environments.
-        </p>
-      </header>
+      </p>
+    <div className="flex justify-center gap-4 flex-wrap">
+      <Link href="/login">
+      <button className="bg-orange-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-orange-700 transition">
+        Get Started
+      </button>
+    </Link>
+    <Link href="/about">
+      <button className="border border-gray-300 text-gray-700 font-semibold py-3 px-6 rounded-lg hover:bg-gray-100 transition">
+        Learn More
+      </button>
+    </Link>
+  </div>
+</header>
       {/* Features Grid */}
       <section className="py-20">
         <div className="max-w-7xl mx-auto px-4">
@@ -71,26 +85,7 @@ export default function Home() {
           </div>
         </div>
       </section>
-
-      {/* Call-to-Action Section */}
-      <section className="bg-gray-900 text-white py-16">
-        <div className="max-w-2xl mx-auto text-center space-y-6">
-          <h2 className="text-3xl font-bold">Ready to Secure Your Infrastructure?</h2>
-          <p className="text-gray-300">
-            Join thousands of organizations that trust SecureWatch for their cybersecurity needs.
-          </p>
-          <div className="flex justify-center gap-4 flex-wrap">
-            <Link href="/login">
-              <button className="border border-white hover:bg-white hover:text-gray-900 font-semibold py-3 px-6 rounded-lg transition">
-                Sign In
-              </button>
-            </Link>
-          </div>
-        </div>
-      </section>
-       <div className="border-t border-border mt-8 pt-8 text-center text-sm text-muted-foreground">
-            <p>&copy; 2025 SecureWatch. All rights reserved.</p>
-          </div>
     </div>
+    </Layout>
   );
 }
