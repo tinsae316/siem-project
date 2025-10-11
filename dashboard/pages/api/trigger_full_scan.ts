@@ -1,3 +1,4 @@
+// pages/api/trigger_full_scan.ts
 import { NextApiRequest, NextApiResponse } from "next";
 import { spawn } from "child_process";
 import path from "path";
@@ -102,13 +103,14 @@ export default async function handler(req: NextApiRequest, res: SSEApiResponse) 
                     });
             });
 
-            // 3. Stream stderr (Prefixed raw error log)
+            // 3. Stream stderr (Prefixed raw error log) - UPDATED
             child.stderr.on("data", (data) => {
                 data.toString()
                     .split("\n")
                     .forEach((line: string) => {
                         if (line.trim()) {
-                            writeAndFlush(`data: RAW_LOG_ERROR:${detector}:${line.trim()}\n\n`);
+                            // Python often sends logs/warnings to stderr. Changed prefix to WARNING.
+                            writeAndFlush(`data: RAW_LOG_WARNING:${detector}:${line.trim()}\n\n`);
                         }
                     });
             });

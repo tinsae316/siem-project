@@ -1,5 +1,6 @@
 # collector/db.py
 import os
+import warnings
 from datetime import datetime
 from dotenv import load_dotenv
 from psycopg_pool import AsyncConnectionPool
@@ -8,6 +9,12 @@ from psycopg.types.json import Json
 load_dotenv()
 DB_URL = os.getenv("DATABASE_URL", "postgresql://user:password@localhost:5432/siem")
 
+# Suppress the specific RuntimeWarning from psycopg_pool
+warnings.filterwarnings(
+    "ignore", 
+    message="opening the async pool AsyncConnectionPool in the constructor is deprecated and will not be supported anymore in a future release.",
+    category=RuntimeWarning
+)
 
 def safe_get(data, *keys):
     """Safely gets a value from a nested dictionary, returning None if any key is missing."""
