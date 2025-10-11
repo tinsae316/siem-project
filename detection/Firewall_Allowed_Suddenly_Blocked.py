@@ -68,8 +68,10 @@ def set_last_scan_time(ts):
 # ----------------- Detector -----------------
 class FirewallAllowedBlockedDetector:
     def __init__(self):
+        # State for detection logic
         self.allowed_sources = {}          # last allowed timestamp per source
         self.denied_attempts = defaultdict(deque)  # denied attempts per source
+        # State for alert deduplication
         self.last_alert_time = {}          # dedupe alerts
 
     def detect(self, logs):
@@ -90,25 +92,34 @@ class FirewallAllowedBlockedDetector:
             if category != "firewall":
                 continue
 
+            # Step 1: Track allowed events (state required for step 2)
             if outcome == "allowed":
                 self.allowed_sources[src_ip] = ts
 
+            # Step 2: Check for denied events following an allowed event
             elif outcome in ["denied", "blocked"]:
+                
+                # Check 1: Must have a prior 'allowed' event
                 if src_ip not in self.allowed_sources:
                     continue
 
                 dq = self.denied_attempts[src_ip]
                 dq.append(ts)
 
+                # Sliding window logic
                 while dq and (ts - dq[0]).total_seconds() > window_sec:
                     dq.popleft()
 
+                # Check 2: Must meet the rate threshold
                 if len(dq) >= CONFIG["deny_threshold"]:
                     alert_id = f"allowed_blocked|{src_ip}"
                     last_alert = self.last_alert_time.get(alert_id)
+                    
+                    # Deduplication check
                     if last_alert and (ts - last_alert).total_seconds() < CONFIG["alert_dedupe_seconds"]:
                         continue
 
+                    # Alert generation
                     alerts.append({
                         "rule": "Firewall Allowed → Suddenly Blocked",
                         "source.ip": src_ip,
@@ -121,7 +132,8 @@ class FirewallAllowedBlockedDetector:
                         "evidence": f"Source {src_ip} was previously allowed but had {len(dq)} denied attempts in {CONFIG['window_minutes']} minutes"
                     })
                     self.last_alert_time[alert_id] = ts
-                    dq.clear()
+                    # CRITICAL FIX: Removed dq.clear() to maintain rate-limiting state
+                    # The sliding window logic handles state expiration, no need to clear on alert.
 
         return alerts
 
@@ -166,6 +178,7 @@ async def fetch_firewall_logs(pool, limit=5000, since=None):
 async def insert_alerts(pool, alerts):
     if not alerts:
         return
+    # ON CONFLICT is correct here for database-level deduplication
     insert_sql = """
     INSERT INTO alerts (
         timestamp, rule, source_ip,
@@ -176,6 +189,11 @@ async def insert_alerts(pool, alerts):
     params_list = []
     for alert in alerts:
         ts_val = ensure_dt(alert["@timestamp"])
+        
+        # Ensure raw object is JSON serializable
+        raw_copy = {k: (str(v) if isinstance(v, (datetime.datetime, ipaddress.IPv4Address, ipaddress.IPv6Address)) else v)
+                    for k, v in alert.items()}
+        
         params_list.append((
             ts_val,
             alert["rule"],
@@ -183,7 +201,7 @@ async def insert_alerts(pool, alerts):
             alert.get("count", 1),
             alert.get("severity"),
             alert.get("attack.technique"),
-            Json(alert),
+            Json(raw_copy),
             alert.get("score"),
             alert.get("evidence")
         ))
@@ -227,14 +245,24 @@ async def main():
     while True:
         scan_time = datetime.datetime.now(datetime.timezone.utc)
         logger.info(f"Starting scheduled scan for recent firewall logs at {scan_time.isoformat()}...")
-        last_scan = get_last_scan_time()
-        logs = await fetch_firewall_logs(pool, limit=5000, since=last_scan)
+        
+        # FIX: Fetch logs for the full time window to maintain accurate rate state
+        lookback_time = scan_time - datetime.timedelta(minutes=CONFIG["window_minutes"])
+        
+        # FIX: Re-initialize the detector state for each scan to avoid processing old data multiple times
+        # Only the dedupe state is kept across scans.
+        detector.allowed_sources.clear()
+        detector.denied_attempts.clear()
+        
+        logs = await fetch_firewall_logs(pool, limit=5000, since=lookback_time)
         alerts = detector.detect(logs)
+        
         if alerts:
             await insert_alerts(pool, alerts)
             for a in alerts:
                 logger.warning("[ALERT] %s - Source:%s Count:%s Severity:%s",
                                a["rule"], a["source.ip"], a["count"], a["severity"])
+            logger.info(f"Generated {len(alerts)} non-deduplicated alerts.")
         else:
             logger.info("No allowed→blocked anomalies detected.")
 

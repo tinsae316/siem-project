@@ -1,4 +1,3 @@
-# detection/Firewall_Port_Scan_Hardened_v2.py
 import asyncio
 import datetime
 import ipaddress
@@ -30,6 +29,7 @@ def ensure_dt(ts):
     if isinstance(ts, datetime.datetime):
         return ts if ts.tzinfo else ts.replace(tzinfo=datetime.timezone.utc)
     if isinstance(ts, str):
+        # NOTE: This expects ISO format with optional Z/timezone
         return datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
     return datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
 
@@ -40,6 +40,7 @@ def normalize_ip(ip_str):
         if ip_str.startswith("[") and "]" in ip_str:
             return ip_str.split("]")[0].lstrip("[")
         if ":" in ip_str and ip_str.count(":") == 1:
+            # Simple fix for IPs with port like '192.168.1.1:80'
             return ip_str.split(":")[0]
     return str(ip_str)
 
@@ -225,36 +226,49 @@ async def ensure_alerts_table(pool):
         count INT,
         severity TEXT,
         attack_technique TEXT,
-        raw JSONB
-    )
+        raw JSONB,
+        UNIQUE (timestamp, rule, source_ip)
+    );
     """
     async with pool.connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(create_sql)
 
 async def insert_alert_into_db(pool, alert: dict):
+    # FIX APPLIED HERE: Changed 'username' to 'user_name' in both the SQL and the params dictionary.
     insert_sql = """
     INSERT INTO alerts (
         timestamp, rule, user_name, source_ip,
         attempt_count, severity, technique, raw
     ) VALUES (%(timestamp)s, %(rule)s, %(user_name)s, %(source_ip)s,
               %(attempt_count)s, %(severity)s, %(technique)s, %(raw)s)
+    ON CONFLICT (timestamp, rule, source_ip) DO NOTHING;
     """
     ts_val = ensure_dt(alert.get("@timestamp"))
     params = {
         "timestamp": ts_val,
         "rule": alert.get("rule"),
+        # FIX: Changed parameter key to 'user_name'
         "user_name": None,
         "source_ip": alert.get("source.ip"),
+        # Mapping 'count' from alert payload to 'attempt_count' database column
         "attempt_count": alert.get("count"),
         "severity": alert.get("severity"),
         "technique": alert.get("attack.technique"),
+        # The full alert payload, including 'score' and 'evidence', is stored here
         "raw": Json(alert)
     }
-    async with pool.connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(insert_sql, params)
-    print(f"[*] Alert saved: {alert.get('rule')} - Src: {alert.get('source.ip')} Dst: {alert.get('destination.ip')}")
+    try:
+        async with pool.connection() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(insert_sql, params)
+        # The success log is now reached if the insert succeeds
+        print(f"[*] Alert saved: {alert.get('rule')} - Src: {alert.get('source.ip')} Dst: {alert.get('destination.ip')}")
+    except Exception as e:
+        # Added more explicit logging for troubleshooting future DB errors
+        print(f"[!] **CRITICAL DB ERROR** inserting alert: {e}")
+        print("Alert data:", alert)
+
 
 # ---------- Fetch firewall logs ----------
 async def fetch_firewall_logs(pool, limit=5000, since=None):
@@ -324,6 +338,7 @@ async def main():
         logs = await fetch_firewall_logs(pool, limit=5000, since=None)
         alerts = detector.detect_from_logs(logs)
         for a in alerts:
+            # The in-memory check already ensures these are non-deduplicated
             print(f"[ALERT] {a['rule']} Src:{a['source.ip']} Dst:{a['destination.ip']} Ports:{a.get('ports')} "
                   f"Count:{a.get('count')} Time:{a.get('@timestamp')} Severity:{a.get('severity')}")
             await insert_alert_into_db(pool, a)
@@ -332,10 +347,20 @@ async def main():
     while True:
         scan_time = datetime.datetime.now(datetime.timezone.utc)
         last_scan = get_last_scan_time()
-        logs = await fetch_firewall_logs(pool, limit=5000, since=last_scan)
+        
+        # Fetch logs for the full largest window to maintain detection state
+        max_window = max(c["window_seconds"] for c in CONFIG.values() if isinstance(c, dict) and "window_seconds" in c)
+        lookback_time = scan_time - datetime.timedelta(seconds=max_window + 60) # A little extra buffer
+        
+        # Clear state (or rely on expire_old) before running detect_from_logs on the lookback window
+        # Note: expire_old handles internal state cleanup based on the timestamp of the incoming logs
+        
+        logs = await fetch_firewall_logs(pool, limit=5000, since=lookback_time)
         alerts = detector.detect_from_logs(logs)
+        
         if alerts:
             for a in alerts:
+                # The in-memory check already ensures these are non-deduplicated
                 print(f"[ALERT] {a['rule']} Src:{a['source.ip']} Dst:{a['destination.ip']} Ports:{a.get('ports')} "
                       f"Count:{a.get('count')} Time:{a.get('@timestamp')} Severity:{a.get('severity')}")
                 await insert_alert_into_db(pool, a)
