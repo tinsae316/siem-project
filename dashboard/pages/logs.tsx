@@ -2,6 +2,7 @@ import { GetServerSideProps } from "next";
 import prisma from "../lib/prisma";
 import { verifyToken } from "../lib/auth";
 import * as cookie from "cookie";
+import Layout from "../components/Layout";
 import { useState } from "react";
 
 interface Log {
@@ -130,16 +131,17 @@ export default function LogsPage({ logs }: LogsPageProps) {
   };
 
   return (
-    <div style={{ 
-      display: 'flex', 
-      height: '100vh', 
-      backgroundColor: '#f8fafc',
-      overflow: 'hidden'
+    <Layout>
+      <div style={{ 
+        display: 'flex', 
+        height: '100vh', 
+        backgroundColor: '#f8fafc',
+        overflow: 'hidden'
     }}>
       {/* Sidebar */}
       <div style={{ 
         width: '300px', 
-        backgroundColor: 'white', 
+        backgroundColor: 'gray-50', 
         padding: '20px',
         borderRight: '1px solid #e2e8f0',
         boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
@@ -155,7 +157,7 @@ export default function LogsPage({ logs }: LogsPageProps) {
             right: '20px',
             padding: '8px 12px',
             backgroundColor: '#f8fafc',
-            color: '#64748b',
+            color: '#1e293b',
             border: '1px solid #e2e8f0',
             borderRadius: '6px',
             fontSize: '12px',
@@ -168,8 +170,8 @@ export default function LogsPage({ logs }: LogsPageProps) {
           ← Back
         </button>
 
-        <h2 style={{ marginBottom: '30px', color: '#1e293b', paddingRight: '60px' }}>System Logs</h2>
-        <p style={{ color: '#64748b', fontSize: '14px', marginBottom: '30px' }}>
+        <h2 style={{ marginBottom: '50px', color: '#1e293b', paddingRight: '60px' }}>System Logs</h2>
+        <p style={{ color: '#64748b', fontSize: '16px', marginBottom: '30px', fontWeight: 'bold' }}>
           Monitor and analyze system events and activities
         </p>
 
@@ -181,7 +183,7 @@ export default function LogsPage({ logs }: LogsPageProps) {
             borderRadius: '8px',
             marginBottom: '10px'
           }}>
-            <div style={{ fontSize: '12px', color: '#64748b' }}>Total Logs</div>
+            <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#64748b' }}>Total Logs</div>
             <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b' }}>{totalLogs}</div>
           </div>
           
@@ -235,7 +237,7 @@ export default function LogsPage({ logs }: LogsPageProps) {
           marginBottom: '20px'
         }}>
           <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#1e293b', marginBottom: '15px' }}>
-            Database Logs
+           Database Logs
           </div>
         </div>
 
@@ -327,7 +329,7 @@ export default function LogsPage({ logs }: LogsPageProps) {
             style={{
               width: '100%',
               padding: '10px',
-              backgroundColor: '#3b82f6',
+              backgroundColor: 'orange',
               color: 'white',
               border: 'none',
               borderRadius: '6px',
@@ -461,5 +463,6 @@ export default function LogsPage({ logs }: LogsPageProps) {
         </div>
       </div>
     </div>
+    </Layout>
   );
 }
