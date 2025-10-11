@@ -2,6 +2,7 @@ import { GetServerSideProps } from "next";
 import prisma from "../lib/prisma";
 import { verifyToken } from "../lib/auth";
 import * as cookie from "cookie";
+import Layout from "../components/Layout";
 import { useState } from "react";
 
 interface Alert {
@@ -167,6 +168,7 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
   };
 
   return (
+    <Layout>
     <div style={{ 
       display: 'flex', 
       height: '100vh', 
@@ -372,7 +374,7 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
             style={{
               width: '100%',
               padding: '10px',
-              backgroundColor: '#3b82f6',
+              backgroundColor: 'orange',
               color: 'white',
               border: 'none',
               borderRadius: '6px',
@@ -548,5 +550,6 @@ export default function AlertsPage({ alerts }: AlertsPageProps) {
         </div>
       </div>
     </div>
+    </Layout>
   );
 }
