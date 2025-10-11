@@ -4,9 +4,9 @@ import * as cookie from "cookie";
 import { verifyToken } from "../lib/auth";
 import prisma from "../lib/prisma";
 import React, { useState } from "react";
-import { FiSettings as SettingsIcon, FiHome, FiList, FiShield } from "react-icons/fi";
+import Layout from "../components/Layout";
+import { FiSettings as SettingsIcon, FiHome, FiList, FiShield, FiUser, FiLogOut} from "react-icons/fi";
 import { useRouter } from "next/router";
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
 import { useMemo } from "react";
 
 interface Log {
@@ -110,10 +110,9 @@ function Sidebar() {
   };
 
   return (
-    <aside className="w-60 bg-white border-r shadow-sm fixed top-0 left-0 h-screen flex flex-col justify-between">
+    <aside className="w-60 bg-gray-900 border-gray-700 shadow-sm fixed top-0 left-0 h-screen flex flex-col justify-between">
       <div>
-        <div className="p-4 font-bold text-xl border-b">🔒 SIEM Dashboard</div>
-        <nav className="p-4 space-y-2 text-gray-700">
+        <nav className="p-4 space-y-2 text-gray-400 py-14">
           {[
             { name: "Overview", path: "/dashboard", icon: <FiHome /> },
             { name: "Security Logs", path: "/logs", icon: <FiList /> },
@@ -123,7 +122,7 @@ function Sidebar() {
               key={item.name}
               href={item.path}
               className={`w-full  text-left px-3 py-2 rounded hover:bg-gray-100 flex items-center gap-2 ${
-                item.name === "Overview" ? "bg-red-500 text-white hover:bg-red-600" : ""
+                item.name === "Overview" ? "bg-lightblue-500 text-gray-400 hover:bg-lightblue-600" : ""
               }`}
             >
               <span className="text-sm">{item.icon}</span>
@@ -148,8 +147,9 @@ function Sidebar() {
               <div className="pl-4 mt-1 flex flex-col space-y-1">
                 <button
                   onClick={handleCreateAdmin}
-                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 text-gray-700"
-                >
+                  className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 text-gray-500"
+                > 
+                <FiUser className="inline mr-2" />
                   Create New Admin
                 </button>
               </div>
@@ -169,32 +169,20 @@ export default function Dashboard({ logs, alerts, users }: DashboardProps) {
   const activeUsers = users.length;
   const router = useRouter();
 
-  // Logout function (keeps behavior you had)
-  const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    // you previously redirected to /landing
-    window.location.href = "/landing";
-  };
-
   return (
+    <Layout>
     <div className="flex min-h-screen bg-gray-50">
       {/* Fixed Sidebar */}
       <Sidebar />
 
       {/* Scrollable Main Content */}
       <main className="flex-1 ml-60 p-8 overflow-y-auto h-screen">
-        {/* Header with Logout */}
+        {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl font-bold">Security Overview</h1>
             <p className="text-gray-600">Monitor your organization’s security posture and recent activities.</p>
           </div>
-          <button
-            onClick={handleLogout}
-            className="bg-red-500 hover:bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium shadow"
-          >
-            Logout
-          </button>
         </div>
 
         {/* Metrics Cards */}
@@ -262,6 +250,7 @@ export default function Dashboard({ logs, alerts, users }: DashboardProps) {
 </div>
 </main>
 </div>
+</Layout>
   );
 }
 
