@@ -146,7 +146,7 @@ export default function ScanPage() {
             let alertsDetected = 0;
             detectors.forEach(d => {
                 alertsDetected += d.logs.filter(log => 
-                    !log.startsWith('🔹') && !log.startsWith('✅') && !log.includes('[ERROR]')
+                    log.includes('[*] Alert saved:')
                 ).length;
             });
 
