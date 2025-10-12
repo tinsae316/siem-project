@@ -199,6 +199,12 @@ async def insert_alerts(pool, alerts):
                 # The executemany call must now match the 8 placeholders in insert_sql
                 for i in range(0, len(params_list), batch_size):
                     await cur.executemany(insert_sql, params_list[i:i+batch_size])
+        
+        # Print individual alert save confirmations
+        for alert in alerts:
+            src_ip = alert.get("source.ip")
+            print(f"[*] Alert saved: {alert.get('rule')} - Src: {src_ip}")
+        
         logger.info(f"✅ Saved {len(alerts)} alerts to DB (duplicates skipped).")
     except Exception as e:
         logger.exception("[!] Error inserting alerts into DB")
