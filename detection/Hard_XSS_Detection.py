@@ -271,7 +271,7 @@ async def main():
 
         # update last scan time and sleep
         set_last_scan_time(scan_time)
-        await asyncio.sleep(400)  # sleep 400 seconds between scans
+        await asyncio.sleep(20)  # sleep 400 seconds between scans
 
 if __name__ == "__main__":
     asyncio.run(main())
