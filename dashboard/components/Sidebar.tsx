@@ -8,6 +8,8 @@ import {
   FiList,
   FiShield,
   FiUser,
+  FiCpu,
+  FiActivity,
 } from "react-icons/fi";
 
 export default function Sidebar() {
@@ -28,6 +30,8 @@ export default function Sidebar() {
     { name: "Overview", path: "/dashboard", icon: <FiHome /> },
     { name: "Security Logs", path: "/logs", icon: <FiList /> },
     { name: "Security Alerts", path: "/alerts", icon: <FiShield /> },
+    { name: "Manual Scan", path: "/scan", icon: <FiCpu /> },
+    { name: "Scheduled Monitor", path: "/scheduled", icon: <FiActivity /> },
   ];
 
   return (
