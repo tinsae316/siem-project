@@ -10,6 +10,7 @@ import {
   FiUser,
   FiCpu,
   FiActivity,
+  FiMessageCircle,
 } from "react-icons/fi";
 
 export default function Sidebar() {
@@ -32,6 +33,7 @@ export default function Sidebar() {
     { name: "Security Alerts", path: "/alerts", icon: <FiShield /> },
     { name: "Manual Scan", path: "/scan", icon: <FiCpu /> },
     { name: "Scheduled Monitor", path: "/scheduled", icon: <FiActivity /> },
+    { name: "Chat Bot", path: "/chat", icon: <FiMessageCircle /> },
   ];
 
   return (
