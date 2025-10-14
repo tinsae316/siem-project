@@ -316,7 +316,7 @@ async def main():
                 print(f"[*] Completed scheduled scan. Generated {len(alerts)} non-deduplicated alerts.")
 
             set_last_scan_time(scan_time)
-            await asyncio.sleep(20)
+            await asyncio.sleep(30)
 
 if __name__ == "__main__":
     asyncio.run(main())
