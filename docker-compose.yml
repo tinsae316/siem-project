@@ -10,15 +10,50 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d siem"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   collector:
-    build: ./collector
+    build: 
+      context: .
+      dockerfile: collector/Dockerfile
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/siem
     ports:
       - "8000:8000"
+    volumes:
+      - ./test_logs:/app/test_logs
+    restart: unless-stopped
+
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/siem
+      - JWT_SECRET=your-strong-secret-key
+    ports:
+      - "3002:3002"
+    restart: unless-stopped
+
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.14.0
+    user: root
+    volumes:
+      - ./filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./test_logs:/var/log/test_logs:ro
+    depends_on:
+      - collector
+    restart: unless-stopped
 
 volumes:
   db_data:
