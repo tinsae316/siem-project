@@ -1,19 +1,71 @@
-// pages/api/trigger_full_scan.ts
 import { NextApiRequest, NextApiResponse } from "next";
 import { spawn } from "child_process";
 import path from "path";
 import * as cookie from "cookie";
-import { verifyToken } from "../../lib/auth"; // Import your token verification function
+import { verifyToken } from "../../lib/auth";
 
-// Define a type for the response with a potential flush method
 type SSEApiResponse = NextApiResponse & { flush?: () => void };
+
+// Helper: run one detector script
+async function runDetector(detector: string, detectionDir: string, env: any, writeAndFlush: (data: string) => void) {
+    return new Promise<void>((resolve) => {
+        const scriptPath = path.join(detectionDir, detector);
+
+        // Send start message
+        const startMessage = {
+            detector,
+            status: "running",
+            log: `🔹 ${detector} started`,
+        };
+        writeAndFlush(`data: ${JSON.stringify(startMessage)}\n\n`);
+
+        const child = spawn("python3", [scriptPath, "--full-scan"], {
+            cwd: detectionDir,
+            env,
+            stdio: ["pipe", "pipe", "pipe"],
+        });
+
+        // Stream stdout
+        child.stdout.on("data", (data) => {
+            data.toString()
+                .split("\n")
+                .forEach((line: string) => {
+                    if (line.trim()) {
+                        writeAndFlush(`data: RAW_LOG:${detector}:${line.trim()}\n\n`);
+                    }
+                });
+        });
+
+        // Stream stderr
+        child.stderr.on("data", (data) => {
+            data.toString()
+                .split("\n")
+                .forEach((line: string) => {
+                    if (line.trim()) {
+                        writeAndFlush(`data: RAW_LOG_WARNING:${detector}:${line.trim()}\n\n`);
+                    }
+                });
+        });
+
+        // On exit
+        child.on("close", () => {
+            const finishMessage = {
+                detector,
+                status: "done",
+                log: `✅ ${detector} done`,
+            };
+            writeAndFlush(`data: ${JSON.stringify(finishMessage)}\n\n`);
+            resolve();
+        });
+    });
+}
 
 export default async function handler(req: NextApiRequest, res: SSEApiResponse) {
     if (req.method !== "GET") {
         return res.status(405).json({ error: "Method not allowed" });
     }
 
-    // 🛑 AUTHENTICATION CHECK 🛑
+    // 🧩 AUTH CHECK
     const cookies = req.headers.cookie || "";
     const { token } = cookie.parse(cookies);
 
@@ -22,34 +74,24 @@ export default async function handler(req: NextApiRequest, res: SSEApiResponse) 
     }
 
     try {
-        verifyToken(token); // Throws an error if the token is invalid or expired
+        verifyToken(token);
     } catch (e) {
-        // Log error for server-side debugging
-        console.error("Token verification failed:", e); 
-        // Send a 403 Forbidden or 401 Unauthorized response
+        console.error("Token verification failed:", e);
         return res.status(401).json({ error: "Unauthorized: Invalid or expired token." });
     }
-    // 🛑 END AUTHENTICATION CHECK 🛑
 
-    // Set headers for SSE
+    // SSE headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
 
-    // NOTE: This line is crucial for preventing proxies/load balancers from buffering.
-    res.setHeader("X-Accel-Buffering", "no"); 
-    
-    // Cast res.write for convenience and implement the flushing logic
     const writeAndFlush = (data: string) => {
         res.write(data);
-        // Attempt to force flush the response stream if the method is available (common in Node environments)
-        if (typeof res.flush === 'function') {
-            res.flush();
-        }
+        if (typeof res.flush === "function") res.flush();
     };
 
     const detectors = [
-        // ... (detectors array unchanged)
         "Hard_Bruteforce_Detection.py",
         "Firewall_Denied_Access.py",
         "Firewall_Allowed_Suddenly_Blocked.py",
@@ -74,64 +116,13 @@ export default async function handler(req: NextApiRequest, res: SSEApiResponse) 
     };
 
     try {
-        for (const detector of detectors) {
-            const scriptPath = path.join(detectionDir, detector);
+        // ⚡ Run all detectors in parallel
+        await Promise.all(detectors.map((detector) => runDetector(detector, detectionDir, env, writeAndFlush)));
 
-            // 1. Send Structured JSON message: START
-            const startMessage = {
-                detector: detector,
-                status: "running",
-                log: `🔹 ${detector} started`,
-            };
-            writeAndFlush(`data: ${JSON.stringify(startMessage)}\n\n`);
-
-            // NOTE: Using 'stdio: [pipe, pipe, pipe]' may also help with buffering.
-            const child = spawn("python3", [scriptPath, "--full-scan"], { 
-                cwd: detectionDir, 
-                env, 
-                stdio: ['pipe', 'pipe', 'pipe'] // Explicitly use pipes
-            });
-
-            // 2. Stream stdout (Prefixed raw log)
-            child.stdout.on("data", (data) => {
-                data.toString()
-                    .split("\n")
-                    .forEach((line: string) => {
-                        if (line.trim()) {
-                            writeAndFlush(`data: RAW_LOG:${detector}:${line.trim()}\n\n`);
-                        }
-                    });
-            });
-
-            // 3. Stream stderr (Prefixed raw error log) - UPDATED
-            child.stderr.on("data", (data) => {
-                data.toString()
-                    .split("\n")
-                    .forEach((line: string) => {
-                        if (line.trim()) {
-                            // Python often sends logs/warnings to stderr. Changed prefix to WARNING.
-                            writeAndFlush(`data: RAW_LOG_WARNING:${detector}:${line.trim()}\n\n`);
-                        }
-                    });
-            });
-
-            // Wait for child process to finish
-            await new Promise((resolve) => child.on("close", resolve));
-
-            // 4. Send Structured JSON message: DONE
-            const finishMessage = {
-                detector: detector,
-                status: "done",
-                log: `✅ ${detector} done`,
-            };
-            writeAndFlush(`data: ${JSON.stringify(finishMessage)}\n\n`);
-        }
-
-        // Signal frontend that scan is fully done
+        // All finished
         writeAndFlush(`event: done\ndata: scan finished\n\n`);
         res.end();
     } catch (err: any) {
-        // Send a system error message
         const errorMessage = {
             detector: "System",
             status: "error",
