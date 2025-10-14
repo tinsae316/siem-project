@@ -16,5 +16,9 @@ node_modules/
 .DS_Store
 
 venv/
+.venv
 
 .vscode/
+/lib/generated/prisma
+./next
+.next/

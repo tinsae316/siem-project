@@ -1,0 +1,67 @@
+# log_processor.py
+import asyncio
+from collector.parser import parse_log_line
+# Import from the updated db file
+from collector.db import insert_log, init_db
+
+def create_db_record(parsed_log: dict) -> dict:
+    """
+    Flattens the structured parsed log dictionary into a flat dictionary
+    that matches the database schema.
+    """
+    # This mapping function is already correct for your database schema.
+    db_record = {
+        "timestamp": parsed_log.get("timestamp"),
+        "source_ip": parsed_log.get("source", {}).get("ip"),
+        "source_port": parsed_log.get("source", {}).get("port"),
+        "username": parsed_log.get("user", {}).get("name"),
+        "host": parsed_log.get("host", {}).get("hostname"),
+        "outcome": parsed_log.get("event", {}).get("outcome"),
+        "severity": None,
+        "category": parsed_log.get("event", {}).get("category", [""]) if parsed_log.get("event") else None,
+        "action": parsed_log.get("event", {}).get("action"),
+        "reason": None,
+        "http_method": parsed_log.get("http", {}).get("request", {}).get("method"),
+        "http_status": parsed_log.get("http", {}).get("response", {}).get("status_code"),
+        "url_path": parsed_log.get("url", {}).get("path"),
+        "user_agent": parsed_log.get("user_agent", {}).get("original"),
+        "attack_type": parsed_log.get("attack", {}).get("type"),
+        "attack_confidence": parsed_log.get("attack", {}).get("confidence"),
+        "labels": parsed_log.get("labels"),
+        "message": parsed_log.get("message"),
+        "raw": parsed_log,
+    }
+    return db_record
+
+async def process_and_insert_log(pool, line: str):
+    """
+    Parses a single log line and inserts it into the database if successful.
+    """
+    parsed_log = parse_log_line(line)
+    if parsed_log:
+        db_record = create_db_record(parsed_log)
+        try:
+            await insert_log(pool, db_record)
+        except Exception as e:
+            print(f"[!] Database insertion failed for log '{line.strip()}': {e}")
+    else:
+        print(f"[!] No parser matched the log line: '{line.strip()}'")
+
+# Example usage (needs to be run in an async context)
+async def main():
+    pool = await init_db()
+    if pool:
+        try:
+            # Test with an SSH log
+            ssh_log = 'Sep  2 15:21:30 server01 sshd[1234]: Failed password for admin from 42.236.12.235 port 22 ssh2'
+            await process_and_insert_log(pool, ssh_log)
+
+            # Test with a web access log
+            web_log = '42.236.12.235 - - [02/Sep/2025:15:21:30 +0000] "POST /login HTTP/1.1" 401 234 "-" "Mozilla/5.0 ..."'
+            await process_and_insert_log(pool, web_log)
+        finally:
+            await pool.close()
+            print("[*] Database connection pool closed.")
+
+if __name__ == "__main__":
+    asyncio.run(main())
