@@ -22,3 +22,4 @@ venv/
 /lib/generated/prisma
 ./next
 .next/
+.env.local
