@@ -200,6 +200,30 @@ if [ -d "$PROJECT_ROOT/detection" ]; then
     python3 Hard_XSS_Detection.py &
     DETECTION_PID3=$!
 
+    python3 Port_Scanning_Detection.py &
+    DETECTION_PID4=$!
+
+    python3 Suspicious_File_Activity.py &
+    DETECTION_PID5=$!
+
+    python3 Suspicious_Protocol_Misuse.py &
+    DETECTION_PID6=$!
+
+    python3 Hard_Suspicious_Admin.py &
+    DETECTION_PID7=$!
+
+    python3 Hard_Endpoint_Scan_Detection.py &
+    DETECTION_PID8=$!
+
+    python3 Firewall_Denied_Access.py &
+    DETECTION_PID9=$!
+
+    python3 Firewall_Allowed_Suddenly_Blocked.py &
+    DETECTION_PID10=$!
+
+    python3 DoS_DDoS_Detection.py &
+    DETECTION_PID11=$!
+
     popd > /dev/null
 else
     print_warning "Detection directory not found at $PROJECT_ROOT/detection — skipping detection scripts"

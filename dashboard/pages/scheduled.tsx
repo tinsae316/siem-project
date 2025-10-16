@@ -236,7 +236,7 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
                         <FiActivity className="w-5 h-5 text-blue-600" />
                         <span className="text-sm font-medium text-blue-800">Running Processes</span>
                     </div>
-                    <div className="text-2xl font-bold text-blue-900">{stats.runningDetectors}/3</div>
+                    <div className="text-2xl font-bold text-blue-900">{stats.runningDetectors}/11</div>
                 </div>
 
                 <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
@@ -281,7 +281,7 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
                                 Scheduled Detection Monitor
                             </h1>
                             <p className="text-gray-600 mt-2">
-                                Monitor running status of the 3 main detection processes started by run_manual.sh
+                                Monitor running status of the 11 main detection processes started by run_manual.sh
                             </p>
                         </div>
                         
@@ -345,7 +345,7 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
                         >
                             {detectors.length === 0 && (
                                 <p className="text-gray-500 p-4 font-light italic">
-                                    Click "Start Monitoring" to check the running status of the 3 detection processes...
+                                    Click "Start Monitoring" to check the running status of the 11 detection processes...
                                 </p>
                             )}
 
