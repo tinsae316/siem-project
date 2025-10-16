@@ -6,3 +6,6 @@ watchdog
 pydantic
 python-dotenv
 geoip2
+Flask
+flask-cors
+openai>=1.0.0

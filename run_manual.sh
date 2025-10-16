@@ -232,4 +232,5 @@ print_status "Process IDs saved to siem_pids.txt"
 
 # Keep script running
 print_status "Press Ctrl+C to stop all services..."
+python app.py
 wait
