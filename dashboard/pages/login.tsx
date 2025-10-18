@@ -30,32 +30,35 @@ export default function Login() {
   const [error, setError] = useState("");
   const [isCheckingAuth, setIsCheckingAuth] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsCheckingAuth(true);
-    setError("");
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setIsCheckingAuth(true);
+  setError("");
 
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      });
+  try {
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(form),
+    });
 
-      const data = await res.json();
+    const data = await res.json();
 
-      if (res.ok) {
-        router.replace("/dashboard"); // Redirect immediately
-        return;
-      } else {
-        setError(data.error || "Invalid username or password");
-      }
-    } catch (err) {
-      setError("An unexpected error occurred");
-    } finally {
-      setIsCheckingAuth(false);
+    if (res.ok) {
+      // Keep the button disabled until redirect finishes
+      await router.replace("/dashboard");
+      return;
+    } else {
+      setError(data.error || "Invalid username or password");
     }
-  };
+  } catch (err) {
+    setError("An unexpected error occurred");
+  } finally {
+    // Only re-enable button if login failed
+    setIsCheckingAuth(false);
+  }
+};
+
 
   return (
     <Layout>
