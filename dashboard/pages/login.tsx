@@ -44,12 +44,25 @@ const handleSubmit = async (e: React.FormEvent) => {
 
     const data = await res.json();
 
+<<<<<<< HEAD
     if (res.ok) {
       // Keep the button disabled until redirect finishes
       await router.replace("/dashboard");
       return;
     } else {
       setError(data.error || "Invalid username or password");
+=======
+      if (res.ok) {
+        router.replace("/dashboard"); // Redirect immediately
+        return;
+      } else {
+        setError(data.error || "Invalid username or password");
+      }
+    } catch (err) {
+      setError("An unexpected error occurred");
+    } finally {
+      setIsCheckingAuth(false);
+>>>>>>> 0f9b2beb050010e2dcaa397886dbb1ae9b40d643
     }
   } catch (err) {
     setError("An unexpected error occurred");

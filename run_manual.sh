@@ -200,6 +200,7 @@ if [ -d "$PROJECT_ROOT/detection" ]; then
     python3 Hard_XSS_Detection.py &
     DETECTION_PID3=$!
 
+<<<<<<< HEAD
     python3 Port_Scanning_Detection.py &
     DETECTION_PID4=$!
 
@@ -224,6 +225,8 @@ if [ -d "$PROJECT_ROOT/detection" ]; then
     python3 DoS_DDoS_Detection.py &
     DETECTION_PID11=$!
 
+=======
+>>>>>>> 0f9b2beb050010e2dcaa397886dbb1ae9b40d643
     popd > /dev/null
 else
     print_warning "Detection directory not found at $PROJECT_ROOT/detection — skipping detection scripts"
@@ -256,4 +259,5 @@ print_status "Process IDs saved to siem_pids.txt"
 
 # Keep script running
 print_status "Press Ctrl+C to stop all services..."
+python app.py
 wait

@@ -10,6 +10,10 @@ import {
   FiUser,
   FiCpu,
   FiActivity,
+<<<<<<< HEAD
+=======
+  FiMessageCircle,
+>>>>>>> 0f9b2beb050010e2dcaa397886dbb1ae9b40d643
 } from "react-icons/fi";
 
 export default function Sidebar() {
@@ -24,7 +28,11 @@ export default function Sidebar() {
     }, 0); // 0.3s delay for effect
   };
 
+<<<<<<< HEAD
   const handleCreateAdmin = () => router.push("/create-admin");
+=======
+  const handleCreateAdmin = () => router.push("/signup");
+>>>>>>> 0f9b2beb050010e2dcaa397886dbb1ae9b40d643
 
   const menuItems = [
     { name: "Overview", path: "/dashboard", icon: <FiHome /> },
@@ -32,6 +40,10 @@ export default function Sidebar() {
     { name: "Security Alerts", path: "/alerts", icon: <FiShield /> },
     { name: "Manual Scan", path: "/scan", icon: <FiCpu /> },
     { name: "Scheduled Monitor", path: "/scheduled", icon: <FiActivity /> },
+<<<<<<< HEAD
+=======
+    { name: "Chat Bot", path: "/chat", icon: <FiMessageCircle /> },
+>>>>>>> 0f9b2beb050010e2dcaa397886dbb1ae9b40d643
   ];
 
   return (

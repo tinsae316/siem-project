@@ -179,7 +179,11 @@ const config = {
       "value": "prisma-client-js"
     },
     "output": {
+<<<<<<< HEAD
       "value": "/home/tinsae316/Documents/Projects/siem-project/dashboard/lib/generated/prisma",
+=======
+      "value": "/home/berne4321/SIEM_Project/siem-project/dashboard/lib/generated/prisma",
+>>>>>>> 0f9b2beb050010e2dcaa397886dbb1ae9b40d643
       "fromEnvVar": null
     },
     "config": {
@@ -193,7 +197,11 @@ const config = {
       }
     ],
     "previewFeatures": [],
+<<<<<<< HEAD
     "sourceFilePath": "/home/tinsae316/Documents/Projects/siem-project/dashboard/prisma/schema.prisma",
+=======
+    "sourceFilePath": "/home/berne4321/SIEM_Project/siem-project/dashboard/prisma/schema.prisma",
+>>>>>>> 0f9b2beb050010e2dcaa397886dbb1ae9b40d643
     "isCustomOutput": true
   },
   "relativeEnvPaths": {
