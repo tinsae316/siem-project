@@ -35,12 +35,12 @@ exports.Prisma = Prisma
 exports.$Enums = {}
 
 /**
- * Prisma Client JS version: 6.16.2
- * Query Engine version: 1c57fdcd7e44b29b9313256c76699e91c3ac3c43
+ * Prisma Client JS version: 6.17.1
+ * Query Engine version: 272a37d34178c2894197e17273bf937f25acdeac
  */
 Prisma.prismaVersion = {
-  client: "6.16.2",
-  engine: "1c57fdcd7e44b29b9313256c76699e91c3ac3c43"
+  client: "6.17.1",
+  engine: "272a37d34178c2894197e17273bf937f25acdeac"
 }
 
 Prisma.PrismaClientKnownRequestError = PrismaClientKnownRequestError;
@@ -179,11 +179,7 @@ const config = {
       "value": "prisma-client-js"
     },
     "output": {
-<<<<<<< HEAD
       "value": "/home/tinsae316/Documents/Projects/siem-project/dashboard/lib/generated/prisma",
-=======
-      "value": "/home/berne4321/SIEM_Project/siem-project/dashboard/lib/generated/prisma",
->>>>>>> 0f9b2beb050010e2dcaa397886dbb1ae9b40d643
       "fromEnvVar": null
     },
     "config": {
@@ -197,11 +193,7 @@ const config = {
       }
     ],
     "previewFeatures": [],
-<<<<<<< HEAD
     "sourceFilePath": "/home/tinsae316/Documents/Projects/siem-project/dashboard/prisma/schema.prisma",
-=======
-    "sourceFilePath": "/home/berne4321/SIEM_Project/siem-project/dashboard/prisma/schema.prisma",
->>>>>>> 0f9b2beb050010e2dcaa397886dbb1ae9b40d643
     "isCustomOutput": true
   },
   "relativeEnvPaths": {
@@ -209,8 +201,8 @@ const config = {
     "schemaEnvPath": "../../../.env"
   },
   "relativePath": "../../../prisma",
-  "clientVersion": "6.16.2",
-  "engineVersion": "1c57fdcd7e44b29b9313256c76699e91c3ac3c43",
+  "clientVersion": "6.17.1",
+  "engineVersion": "272a37d34178c2894197e17273bf937f25acdeac",
   "datasourceNames": [
     "db"
   ],
