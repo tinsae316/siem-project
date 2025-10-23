@@ -24,3 +24,4 @@ venv/
 .next/
 dashboard/.env.local
 
+/detction/*.txt
