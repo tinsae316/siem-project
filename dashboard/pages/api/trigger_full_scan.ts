@@ -116,9 +116,8 @@ export default async function handler(req: NextApiRequest, res: SSEApiResponse) 
     };
 
     try {
-        // ⚡️ Run all detectors in parallel
+        // ⚡ Run all detectors in parallel
         await Promise.all(detectors.map((detector) => runDetector(detector, detectionDir, env, writeAndFlush)));
-
 
         // All finished
         writeAndFlush(`event: done\ndata: scan finished\n\n`);

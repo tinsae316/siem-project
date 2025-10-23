@@ -134,7 +134,6 @@ if docker compose ps | grep -q "Up"; then
     python3 Suspicious_Protocol_Misuse.py &
     cd ..
 
-
     print_status "Running Hard_Suspicious_Admin detection..."
     cd detection
     python3 Hard_Suspicious_Admin.py &

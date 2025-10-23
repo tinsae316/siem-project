@@ -1,23 +1,31 @@
-# detection/Hard_XSS_Detection.py
 import asyncio
 import datetime
 import re
 from collections import defaultdict
 from psycopg.types.json import Json
-from ipaddress import IPv4Address
+from ipaddress import IPv4Address, IPv6Address
 import os
 import sys
+import json
+
+# optional HTTP client to send alerts to a frontend endpoint
+import aiohttp
 
 # ensure project root is importable (collector is sibling of detection/)
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 
 from collector.db import init_db  # your existing DB init function
 
-# --- CONFIGURATION (Added alert_dedupe_seconds) ---
+# --- CONFIGURATION (Added alert_dedupe_seconds and alerts_endpoint) ---
 CONFIG = {
-    "rate_threshold": 3,
-    "window_minutes": 5,
-    "alert_dedupe_seconds": 300, # 5 minutes deduplication window
+    "rate_threshold": 1,
+    "window_minutes": 1,
+    "alert_dedupe_seconds": 300,  # 5 minutes deduplication window
+    # If you want alerts POSTed to a frontend service, set this to the full URL
+    # e.g. "http://localhost:3000/api/alerts". If None, no HTTP send will happen.
+    "alerts_endpoint": None,
+    # Optional auth token for the frontend (set to None if not used)
+    "alerts_endpoint_token": None,
 }
 
 # --- GLOBAL DEDUPLICATION STATE ---
@@ -28,7 +36,7 @@ LAST_ALERT_TIME = {}
 xss_patterns = [
     r"<script.*?>.*?</script>",
     r"javascript:",
-    r"on\w+\s*=",
+    r"on\w+\s=",
     r"<iframe.*?>",
     r"<img.*?on\w+\s*=.*?>",
     r"alert\s*\(.*?\)",
@@ -120,7 +128,7 @@ def detect_hard_xss(logs, rate_threshold=CONFIG["rate_threshold"], window_minute
             ip = log["source"].get("ip")
             if isinstance(ip, IPv4Address):
                 ip = str(ip)
-            
+
             if not ip:
                 continue
 
@@ -182,20 +190,23 @@ async def insert_alert_into_db(pool, alert):
     else:
         ts_val = ts
 
+    # Convert both IPv4 and IPv6 to string
     src_ip = alert.get("source.ip")
-    if isinstance(src_ip, IPv4Address):
+    if isinstance(src_ip, (IPv4Address, IPv6Address)):
         src_ip = str(src_ip)
 
-    # Ensure all fields for raw are JSON serializable
-    raw_copy = {}
-    for k, v in alert.items():
-        if k == "@timestamp":
-            raw_copy[k] = ts_val.isoformat()
-        elif isinstance(v, (IPv4Address, datetime.datetime)):
-            raw_copy[k] = str(v)
+    # Make raw fully JSON serializable
+    def sanitize(obj):
+        if isinstance(obj, (IPv4Address, IPv6Address, datetime.datetime)):
+            return str(obj)
+        elif isinstance(obj, dict):
+            return {k: sanitize(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [sanitize(i) for i in obj]
         else:
-            raw_copy[k] = v
+            return obj
 
+    raw_copy = sanitize(alert)
 
     params = {
         "timestamp": ts_val,
@@ -217,6 +228,38 @@ async def insert_alert_into_db(pool, alert):
         print(f"[!] Error inserting alert into DB: {e}")
         print("Alert data:", alert)
 
+
+# --- Send alert to frontend endpoint (if configured) ---
+async def send_alert_to_endpoint(alert):
+    url = CONFIG.get("alerts_endpoint")
+    if not url:
+        return
+
+    # Prepare a JSON-serializable payload
+    payload = {}
+    for k, v in alert.items():
+        if isinstance(v, (datetime.datetime, IPv4Address)):
+            payload[k] = str(v)
+        else:
+            payload[k] = v
+
+    headers = {"Content-Type": "application/json"}
+    token = CONFIG.get("alerts_endpoint_token")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers=headers, timeout=10) as resp:
+                if resp.status >= 200 and resp.status < 300:
+                    print(f"[->] Alert posted to frontend ({url}): {payload.get('rule')} {payload.get('source.ip')}")
+                else:
+                    text = await resp.text()
+                    print(f"[!] Frontend endpoint returned {resp.status}: {text}")
+    except Exception as e:
+        print(f"[!] Failed to POST alert to frontend endpoint {url}: {e}")
+
+
 # --- Main ---
 async def main():
     import argparse
@@ -237,6 +280,8 @@ async def main():
                 # Only alerts that passed the in-memory check are printed/sent to SSE
                 print(f"[ALERT] {alert['rule']} - User:{alert['user.name']} IP:{alert['source.ip']} "
                       f"Attempts:{alert['count']} Severity:{alert['severity']}")
+                # fire-and-forget send to frontend so UI can show it in near real-time
+                asyncio.create_task(send_alert_to_endpoint(alert))
                 await insert_alert_into_db(pool, alert)
         else:
             print("[*] No advanced XSS detected (full scan).")
@@ -261,6 +306,8 @@ async def main():
                 # Only alerts that passed the in-memory check are printed/sent to SSE
                 print(f"[ALERT] {alert['rule']} - User:{alert['user.name']} IP:{alert['source.ip']} "
                       f"Attempts:{alert['count']} Severity:{alert['severity']}")
+                # send to frontend endpoint (fire-and-forget) so the UI can reflect alerts live
+                asyncio.create_task(send_alert_to_endpoint(alert))
                 await insert_alert_into_db(pool, alert)
         else:
             now_no = datetime.datetime.now(datetime.timezone.utc)
@@ -271,7 +318,7 @@ async def main():
 
         # update last scan time and sleep
         set_last_scan_time(scan_time)
-        await asyncio.sleep(20)  # sleep 400 seconds between scans
+        await asyncio.sleep(30)  # sleep 30 seconds between scans
 
 if __name__ == "__main__":
     asyncio.run(main())
