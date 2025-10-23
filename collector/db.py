@@ -115,6 +115,7 @@ async def init_db():
         print(f"[!] Error initializing database: {e}")
         raise
 
+
 # -------------------- Fetch Alerts --------------------
 async def fetch_alerts(pool: AsyncConnectionPool, limit: int = 50, search: str = None):
     """Fetch alerts from the alerts table. Optional search filters rule, user_name, source_ip, technique."""
@@ -229,6 +230,7 @@ async def insert_log(pool, log: dict):
         log_data = log.copy()
         if 'id' in log_data:
             del log_data['id']
+
 
         log_timestamp = ensure_dt(log_data.get("timestamp"))
 

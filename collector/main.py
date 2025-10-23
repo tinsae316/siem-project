@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 from collector.schemas import LogSchema
 from collector.parser import parse_log_line
 from collector.db import insert_log, init_db
-from collector.enhanced_db import init_enhanced_db, insert_log_with_evolution
 from collector.file_watcher import watch_files_with_pool
 import asyncio
 
@@ -14,8 +13,7 @@ db_pool = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global db_pool
-    # Use enhanced database with schema evolution
-    db_pool = await init_enhanced_db()
+    db_pool = await init_db()
     file_watcher_task = asyncio.create_task(watch_files_with_pool(db_pool))
     yield
     file_watcher_task.cancel()
@@ -25,7 +23,7 @@ async def lifespan(app: FastAPI):
         print("[*] File watcher task stopped.")
     finally:
         await db_pool.close()
-        print("[*] Enhanced database connection pool closed.")
+        print("[*] Database connection pool closed.")
 
 # ✅ app must be defined before you add routes
 app = FastAPI(title="SIEM Collector", lifespan=lifespan)
@@ -53,7 +51,7 @@ async def collect_log(request: Request):
                 raise ValueError(f"Could not parse log line: {message}")
             log_dict = parsed
 
-        await insert_log_with_evolution(db_pool, log_dict)
+        await insert_log(db_pool, log_dict)
         return JSONResponse(content={"status": "ok", "message": "Log received"})
     except Exception as e:
         return JSONResponse(status_code=500, content={"status": "error", "detail": str(e)})
