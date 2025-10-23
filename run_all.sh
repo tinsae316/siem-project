@@ -118,6 +118,46 @@ if docker compose ps | grep -q "Up"; then
     cd detection
     python3 Hard_XSS_Detection.py &
     cd ..
+
+    print_status "Running Port Scanning Detection..."
+    cd detection
+    python3 Port_Scanning_Detection.py &
+    cd ..
+    
+    print_status "Running Suspicious File Activity..."
+    cd detection
+    python3 Suspicious_File_Activity.py &
+    cd ..
+    
+    print_status "Running Suspicious Protocol Misuse detection..."
+    cd detection
+    python3 Suspicious_Protocol_Misuse.py &
+    cd ..
+
+    print_status "Running Hard_Suspicious_Admin detection..."
+    cd detection
+    python3 Hard_Suspicious_Admin.py &
+    cd ..
+    
+    print_status "Running Hard_Endpoint_Scan_Detection detection..."
+    cd detection
+    python3 Hard_Endpoint_Scan_Detection.py &
+    cd ..
+    
+    print_status "Running Firewall_Denied_Access detection..."
+    cd detection
+    python3 Firewall_Denied_Access.py &
+    cd ..
+
+    print_status "Running Firewall_Allowed_Suddenly_Blocked detection..."
+    cd detection
+    python3 Firewall_Allowed_Suddenly_Blocked.py &
+    cd ..
+
+    print_status "Running DoS_DDoS_Detection detection..."
+    cd detection
+    python3 DoS_DDoS_Detection.py &
+    cd ..
     
     print_success "All detection scripts started!"
     

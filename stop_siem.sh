@@ -49,6 +49,14 @@ pkill -f "next dev" 2>/dev/null && print_status "Stopped dashboard processes" ||
 # Kill detection processes
 pkill -f "Hard_.*_Detection.py" 2>/dev/null && print_status "Stopped detection processes" || true
 
+pkill -f "Suspicious_File_Activity.py" 2>/dev/null && print_status "Stopped detection processes" || true
+pkill -f "Suspicious_Protocol_Misuse.py" 2>/dev/null && print_status "Stopped detection processes" || true
+pkill -f "Hard_Suspicious_Admin.py" 2>/dev/null && print_status "Stopped detection processes" || true
+pkill -f "Hard_Endpoint_Scan_Detection.py" 2>/dev/null && print_status "Stopped detection processes" || true
+pkill -f "Firewall_Denied_Access.py" 2>/dev/null && print_status "Stopped detection processes" || true
+pkill -f "Firewall_Allowed_Suddenly_Blocked.py" 2>/dev/null && print_status "Stopped detection processes" || true
+pkill -f "DoS_DDoS_Detection.py" 2>/dev/null && print_status "Stopped detection processes" || true
+pkill -f "Port_Scanning_Detection.py" 2>/dev/null && print_status "Stopped detection processes" || true
 # Stop Docker containers if running
 if command -v docker &> /dev/null && docker ps &> /dev/null; then
     print_status "Stopping Docker containers..."

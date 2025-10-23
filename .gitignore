@@ -22,3 +22,6 @@ venv/
 /lib/generated/prisma
 ./next
 .next/
+dashboard/.env.local
+
+detection/*.txt

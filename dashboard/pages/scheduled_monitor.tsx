@@ -3,34 +3,24 @@
 import { GetServerSideProps } from "next";
 import * as cookie from "cookie";
 import { verifyToken } from "../lib/auth";
-import prisma from "../lib/prisma"; // <--- 1. ADD: Import prisma for server-side DB access
 import { useState, useEffect, useRef } from "react";
 import Layout from "../components/Layout";
 import Sidebar from "../components/Sidebar";
-import { 
-    FiCpu, 
-    FiLoader, 
-    FiCheckCircle, 
-    FiAlertTriangle, 
-    FiZap, 
-    FiTerminal, 
-    FiBarChart2, 
-    FiShieldOff, 
-    FiSearch, 
-    FiCode,
+import {
     FiActivity,
-    FiPlay,
+    FiAlertTriangle,
+    FiCheckCircle,
+    FiClock,
+    FiLoader,
     FiPause,
+    FiPlay,
     FiRefreshCw,
-    FiClock
+    FiTerminal,
+    FiZap,
 } from "react-icons/fi";
 
 // --- SERVER-SIDE AUTH PROTECTION ---
-interface ScheduledMonitorPageProps { // <--- 2. ADD: Interface for new prop
-    initialTotalAlerts: number; 
-}
-
-export const getServerSideProps: GetServerSideProps<ScheduledMonitorPageProps> = async (ctx) => { // <--- 3. UPDATE: Function signature
+export const getServerSideProps: GetServerSideProps = async (ctx) => {
     const cookies = ctx.req.headers.cookie || "";
     const { token } = cookie.parse(cookies);
 
@@ -40,15 +30,11 @@ export const getServerSideProps: GetServerSideProps<ScheduledMonitorPageProps> =
 
     try {
         verifyToken(token);
-        
-        // 4. FETCH: Get the total alert count from the database
-        const totalAlerts = await prisma.alerts.count(); 
-
-        // 5. PASS: Return the count in props
-        return { props: { initialTotalAlerts: totalAlerts } }; 
     } catch {
         return { redirect: { destination: "/login", permanent: false } };
     }
+
+    return { props: {} };
 };
 
 interface DetectorStatus {
@@ -56,19 +42,17 @@ interface DetectorStatus {
     status: "pending" | "starting" | "running" | "stopped" | "error";
     logs: string[];
     lastActivity: Date;
-    alertsGenerated: number; // Alerts generated during this live session
+    alertsGenerated: number;
 }
 
 interface MonitorStats {
     totalDetectors: number;
     runningDetectors: number;
-    liveStreamAlerts: number; // Alerts from the current stream
-    dbTotalAlerts: number;   // Total alerts in the DB (initial + live)
+    totalAlerts: number;
     systemUptime: Date;
 }
 
-// 6. ACCEPT: Accept the new prop
-export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMonitorPageProps) {
+export default function ScheduledMonitorPage() {
     const [detectors, setDetectors] = useState<DetectorStatus[]>([]);
     const [isMonitoring, setIsMonitoring] = useState(false);
     const [stats, setStats] = useState<MonitorStats | null>(null);
@@ -77,39 +61,37 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
     const eventSourceRef = useRef<EventSource | null>(null);
     const startTimeRef = useRef<Date>(new Date());
 
-    // Helper function to update detector state and logs
+    // 🔹 Update detector state and logs
     const updateDetectorState = (detectorName: string, status: DetectorStatus['status'], logLine: string) => {
         setDetectors((prev) => {
             const existingIndex = prev.findIndex((d) => d.name === detectorName);
-            
+
             if (existingIndex === -1) {
-                // Create new detector
                 const newDetector: DetectorStatus = {
                     name: detectorName,
-                    status: status,
+                    status,
                     logs: [logLine],
                     lastActivity: new Date(),
-                    alertsGenerated: 0
+                    alertsGenerated: 0,
                 };
                 return [...prev, newDetector];
             }
 
-            // Update existing detector
             const updated = [...prev];
             updated[existingIndex] = {
                 ...updated[existingIndex],
-                status: status,
+                status,
                 logs: [...updated[existingIndex].logs, logLine],
                 lastActivity: new Date(),
-                alertsGenerated: logLine.includes("[ALERT]") || logLine.includes("[*] Alert saved:") 
-                    ? updated[existingIndex].alertsGenerated + 1 
-                    : updated[existingIndex].alertsGenerated
+                alertsGenerated: logLine.includes("[ALERT]") || logLine.includes("[*] Alert saved:")
+                    ? updated[existingIndex].alertsGenerated + 1
+                    : updated[existingIndex].alertsGenerated,
             };
             return updated;
         });
     };
 
-    // Start monitoring function
+    // 🔹 Start monitoring
     const startMonitoring = () => {
         if (eventSourceRef.current) {
             eventSourceRef.current.close();
@@ -127,9 +109,9 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
             console.log("Connected to scheduled monitor");
         };
 
+        // 🔸 Handle main SSE messages
         eventSource.onmessage = (event) => {
             const data = event.data;
-
             try {
                 const message = JSON.parse(data);
                 if (message.detector && message.status && message.log) {
@@ -145,33 +127,35 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
                     updateDetectorState(detectorName, "running", logLine);
                     return;
                 }
-                
-                if (data.startsWith("RAW_LOG_WARNING:")) {
-                    const content = data.substring("RAW_LOG_WARNING:".length);
-                    const parts = content.split(":");
-                    const detectorName = parts[0];
-                    const logLine = `[WARNING] ${parts.slice(1).join(":")}`;
-                    updateDetectorState(detectorName, "running", logLine);
-                    return;
-                }
             }
         };
 
-        eventSource.addEventListener("status", (event) => {
-            console.log("Status:", event.data);
+        // 🔸 Listen for total alerts updates
+        eventSource.addEventListener("total_alerts", (event) => {
+            const newCount = parseInt(event.data);
+            setStats((prev) =>
+                prev
+                    ? { ...prev, totalAlerts: newCount }
+                    : {
+                        totalDetectors: 3,
+                        runningDetectors: 0,
+                        totalAlerts: newCount,
+                        systemUptime: startTimeRef.current,
+                    }
+            );
         });
 
+        // 🔸 Heartbeat
         eventSource.addEventListener("heartbeat", (event) => {
-            // Update stats with heartbeat
-            // Forces a re-render to update the uptime counter
-            setStats(prev => prev ? { ...prev } : null);
+            setStats((prev) => (prev ? { ...prev } : null));
         });
 
+        // 🔸 Handle errors
         eventSource.onerror = (err) => {
             console.error("EventSource error:", err);
             setConnectionStatus("disconnected");
             setIsMonitoring(false);
-            
+
             if (eventSource.readyState === EventSource.CLOSED) {
                 updateDetectorState("System", "error", "Monitor connection closed. Check your login status.");
             } else {
@@ -180,7 +164,7 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
         };
     };
 
-    // Stop monitoring function
+    // 🔹 Stop monitoring
     const stopMonitoring = () => {
         if (eventSourceRef.current) {
             eventSourceRef.current.close();
@@ -190,23 +174,21 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
         setConnectionStatus("disconnected");
     };
 
-    // 7. UPDATE: Update stats when detectors change or initial alerts change
+    // 🔹 Update stats when detectors change
     useEffect(() => {
         const totalDetectors = detectors.length;
-        const runningDetectors = detectors.filter(d => d.status === 'running').length;
-        const liveStreamAlerts = detectors.reduce((sum, d) => sum + d.alertsGenerated, 0);
+        const runningDetectors = detectors.filter((d) => d.status === "running").length;
+        const totalAlerts = stats?.totalAlerts ?? detectors.reduce((sum, d) => sum + d.alertsGenerated, 0);
 
         setStats({
             totalDetectors,
             runningDetectors,
-            liveStreamAlerts,
-            // Calculate total DB alerts: initial count + new alerts from the live stream
-            dbTotalAlerts: initialTotalAlerts + liveStreamAlerts, 
-            systemUptime: startTimeRef.current
+            totalAlerts,
+            systemUptime: startTimeRef.current,
         });
-    }, [detectors, initialTotalAlerts]); // <-- Add initialTotalAlerts to dependencies
+    }, [detectors]);
 
-    // Auto-scroll effect
+    // 🔹 Auto-scroll effect
     useEffect(() => {
         logContainerRef.current?.scrollTo({
             top: logContainerRef.current.scrollHeight,
@@ -214,7 +196,7 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
         });
     }, [detectors]);
 
-    // Cleanup on unmount
+    // 🔹 Cleanup
     useEffect(() => {
         return () => {
             if (eventSourceRef.current) {
@@ -223,7 +205,7 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
         };
     }, []);
 
-    // Stats display component
+    // 🔹 Stats display
     const StatsDisplay = ({ stats }: { stats: MonitorStats }) => {
         const uptime = Math.floor((Date.now() - stats.systemUptime.getTime()) / 1000);
         const hours = Math.floor(uptime / 3600);
@@ -236,15 +218,15 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
                         <FiActivity className="w-5 h-5 text-blue-600" />
                         <span className="text-sm font-medium text-blue-800">Running Processes</span>
                     </div>
-                    <div className="text-2xl font-bold text-blue-900">{stats.runningDetectors}/11</div>
+                    <div className="text-2xl font-bold text-blue-900">{stats.runningDetectors}/3</div>
                 </div>
 
                 <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
                     <div className="flex items-center gap-2">
                         <FiAlertTriangle className="w-5 h-5 text-orange-600" />
-                        <span className="text-sm font-medium text-orange-800">Total Alerts (DB)</span> {/* 8. UPDATE: Label for clarity */}
+                        <span className="text-sm font-medium text-orange-800">Total Alerts</span>
                     </div>
-                    <div className="text-2xl font-bold text-orange-900">{stats.dbTotalAlerts}</div> {/* 9. UPDATE: Use the new total */}
+                    <div className="text-2xl font-bold text-orange-900">{stats.totalAlerts}</div>
                 </div>
 
                 <div className="bg-green-50 p-4 rounded-lg border border-green-200">
@@ -262,13 +244,14 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
                         <FiClock className="w-5 h-5 text-purple-600" />
                         <span className="text-sm font-medium text-purple-800">Uptime</span>
                     </div>
-                    <div className="text-lg font-bold text-purple-900">{hours}h {minutes}m</div>
+                    <div className="text-lg font-bold text-purple-900">
+                        {hours}h {minutes}m
+                    </div>
                 </div>
             </div>
         );
     };
-    
-    // ... rest of the component (return statement) remains the same
+
     return (
         <Layout>
             <div className="flex bg-gray-50 min-h-screen pt-16">
@@ -277,14 +260,14 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
                     <div className="flex items-center justify-between mb-8">
                         <div>
                             <h1 className="text-4xl font-extrabold text-gray-900 flex items-center gap-3">
-                                <FiActivity className="text-blue-600 w-8 h-8" /> 
+                                <FiActivity className="text-blue-600 w-8 h-8" />
                                 Scheduled Detection Monitor
                             </h1>
                             <p className="text-gray-600 mt-2">
-                                Monitor running status of the 11 main detection processes started by run_manual.sh
+                                Monitor running status and live alert count of detection processes.
                             </p>
                         </div>
-                        
+
                         <div className="flex gap-3">
                             {!isMonitoring ? (
                                 <button
@@ -303,7 +286,7 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
                                     Stop Monitoring
                                 </button>
                             )}
-                            
+
                             <button
                                 onClick={() => {
                                     stopMonitoring();
@@ -319,114 +302,122 @@ export default function ScheduledMonitorPage({ initialTotalAlerts }: ScheduledMo
 
                     {stats && <StatsDisplay stats={stats} />}
 
-                    <div className="max-w-6xl mx-auto bg-white p-6 rounded-3xl shadow-2xl border border-gray-100">
+                    <div
+                        className="max-w-6xl mx-auto bg-white p-6 rounded-3xl shadow-2xl border border-gray-100"
+                    >
                         <div className="flex items-center justify-between mb-4">
                             <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                                 <FiTerminal className="w-5 h-5 text-gray-600" />
                                 Live Detection Logs
                             </h2>
-                            <div className={`px-3 py-1 rounded-full text-sm font-medium ${
-                                connectionStatus === "connected" 
-                                    ? "bg-green-100 text-green-800" 
-                                    : connectionStatus === "connecting"
-                                    ? "bg-yellow-100 text-yellow-800"
-                                    : "bg-red-100 text-red-800"
-                            }`}>
+                            <div
+                                className={`px-3 py-1 rounded-full text-sm font-medium ${
+                                    connectionStatus === "connected"
+                                        ? "bg-green-100 text-green-800"
+                                        : connectionStatus === "connecting"
+                                        ? "bg-yellow-100 text-yellow-800"
+                                        : "bg-red-100 text-red-800"
+                                }`}
+                            >
                                 {connectionStatus === "connected" && "🟢 Connected"}
                                 {connectionStatus === "connecting" && "🟡 Connecting..."}
                                 {connectionStatus === "disconnected" && "🔴 Disconnected"}
                             </div>
                         </div>
 
-                        <div 
-                            className="flex flex-col gap-0 border rounded-lg bg-gray-100 p-3 shadow-inner" 
-                            ref={logContainerRef} 
+                        <div
+                            className="flex flex-col gap-0 border rounded-lg bg-gray-100 p-3 shadow-inner"
+                            ref={logContainerRef}
                             style={{ maxHeight: 500, overflowY: "auto" }}
                         >
                             {detectors.length === 0 && (
                                 <p className="text-gray-500 p-4 font-light italic">
-                                    Click "Start Monitoring" to check the running status of the 11 detection processes...
+                                    Click "Start Monitoring" to begin tracking the detection processes...
                                 </p>
                             )}
 
                             {detectors.map((det, idx) => {
-                                const isRunning = det.status === 'running';
-                                const isError = det.status === 'error';
-                                const isStarting = det.status === 'starting';
-                                const isStopped = det.status === 'stopped';
-                                
+                                const isRunning = det.status === "running";
+                                const isError = det.status === "error";
+                                const isStarting = det.status === "starting";
+                                const isStopped = det.status === "stopped";
+
                                 const blockClasses = `p-3 rounded-md transition-all duration-300 my-1 ${
-                                    isRunning 
-                                        ? 'bg-green-100 border-l-4 border-green-500 shadow-md' 
-                                        : isError 
-                                        ? 'bg-red-100 border-l-4 border-red-500'
+                                    isRunning
+                                        ? "bg-green-100 border-l-4 border-green-500 shadow-md"
+                                        : isError
+                                        ? "bg-red-100 border-l-4 border-red-500"
                                         : isStarting
-                                        ? 'bg-yellow-100 border-l-4 border-yellow-500'
+                                        ? "bg-yellow-100 border-l-4 border-yellow-500"
                                         : isStopped
-                                        ? 'bg-gray-100 border-l-4 border-gray-500'
-                                        : 'bg-white border border-gray-200'
+                                        ? "bg-gray-100 border-l-4 border-gray-500"
+                                        : "bg-white border border-gray-200"
                                 }`;
 
                                 return (
                                     <div key={idx} className={blockClasses}>
                                         <div className="flex items-start gap-3">
-                                            {/* Status Icon */}
                                             <div className="w-5 pt-1 flex-shrink-0">
                                                 {isRunning && <FiActivity className="animate-pulse text-green-600 w-5 h-5" />}
                                                 {isStarting && <FiLoader className="animate-spin text-yellow-600 w-5 h-5" />}
                                                 {isStopped && <FiPause className="text-gray-600 w-5 h-5" />}
                                                 {isError && <FiAlertTriangle className="text-red-600 w-5 h-5" />}
-                                                {det.status === "pending" && <FiZap className="text-gray-400 w-5 h-5" />}
                                             </div>
 
                                             <div className="flex-1 min-w-0">
-                                                {/* Detector Name and Stats */}
                                                 <div className="flex items-center justify-between">
-                                                    <p className={`truncate font-bold text-sm ${
-                                                        isRunning ? 'text-green-900' : 
-                                                        isError ? 'text-red-900' : 
-                                                        isStarting ? 'text-yellow-900' :
-                                                        isStopped ? 'text-gray-900' :
-                                                        'text-gray-900'
-                                                    }`}>
+                                                    <p
+                                                        className={`truncate font-bold text-sm ${
+                                                            isRunning
+                                                                ? "text-green-900"
+                                                                : isError
+                                                                ? "text-red-900"
+                                                                : isStarting
+                                                                ? "text-yellow-900"
+                                                                : "text-gray-900"
+                                                        }`}
+                                                    >
                                                         {det.name}
                                                     </p>
                                                     <div className="flex gap-2 text-xs">
                                                         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                                            {det.alertsGenerated} alerts (Live)
+                                                            {det.alertsGenerated} alerts
                                                         </span>
                                                         <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded">
                                                             {det.lastActivity.toLocaleTimeString()}
                                                         </span>
                                                     </div>
                                                 </div>
-                                                
-                                                {/* Live Logs */}
+
                                                 {det.logs.length > 0 && (
                                                     <div className="mt-1 space-y-0.5 border-t pt-1 border-dotted border-gray-300">
                                                         {det.logs.slice(-10).map((log, i) => (
-                                                            <p 
-                                                                key={i} 
+                                                            <p
+                                                                key={i}
                                                                 className={`text-xs pl-2 break-words font-mono ${
-                                                                    log.includes("[ERROR]") || log.includes("❌") || log.includes("failed")
-                                                                        ? 'text-red-600 font-semibold' 
-                                                                        : log.includes("[ALERT]") || log.includes("[*] Alert saved:")
-                                                                        ? 'text-orange-600 font-semibold'
+                                                                    log.includes("[ERROR]") ||
+                                                                    log.includes("❌") ||
+                                                                    log.includes("failed")
+                                                                        ? "text-red-600 font-semibold"
+                                                                        : log.includes("[ALERT]") ||
+                                                                          log.includes("[*] Alert saved:")
+                                                                        ? "text-orange-600 font-semibold"
                                                                         : log.includes("[WARNING]")
-                                                                        ? 'text-yellow-600 font-medium'
-                                                                        : isRunning 
-                                                                        ? 'text-gray-700'
-                                                                        : 'text-gray-500'
+                                                                        ? "text-yellow-600 font-medium"
+                                                                        : isRunning
+                                                                        ? "text-gray-700"
+                                                                        : "text-gray-500"
                                                                 }`}
                                                             >
-                                                                {log.startsWith("🔹") || log.startsWith("✅") || log.startsWith("🚀") || log.startsWith("⚠️") || log.startsWith("❌") ? log : `> ${log}`}
+                                                                {log.startsWith("🔹") ||
+                                                                log.startsWith("✅") ||
+                                                                log.startsWith("🚀") ||
+                                                                log.startsWith("⚠️") ||
+                                                                log.startsWith("❌")
+                                                                    ? log
+                                                                    : `> ${log}`}
                                                             </p>
                                                         ))}
-                                                        {det.logs.length > 10 && (
-                                                            <p className="text-xs text-gray-400 italic pl-2">
-                                                                ... and {det.logs.length - 10} more logs
-                                                            </p>
-                                                        )}
                                                     </div>
                                                 )}
                                             </div>
