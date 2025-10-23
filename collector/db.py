@@ -7,6 +7,7 @@ from psycopg.rows import dict_row
 import psycopg
 from psycopg_pool import AsyncConnectionPool
 from dotenv import load_dotenv
+from ipaddress import IPv4Address, IPv6Address
 
 load_dotenv()
 logger = logging.getLogger(__name__)
@@ -30,6 +31,30 @@ def ensure_dt(timestamp_str):
         return datetime.fromisoformat(timestamp_str)
     except Exception:
         return datetime.utcnow()
+
+def to_pg_text_array(pylist):
+    if pylist is None:
+        return None
+    if isinstance(pylist, str):
+        return '{%s}' % pylist
+    # Handle any string conversion of list items
+    return '{' + ','.join('"%s"' % str(x).replace('"','\\"') for x in pylist) + '}'
+
+def serialize_ip(ip):
+    if isinstance(ip, (IPv4Address, IPv6Address)):
+        return str(ip)
+    return ip
+
+def sanitize_for_json(obj):
+    """Recursively sanitize object for JSON storage."""
+    if isinstance(obj, (IPv4Address, IPv6Address)):
+        return str(obj)
+    elif isinstance(obj, dict):
+        return {k: sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_for_json(i) for i in obj]
+    else:
+        return obj
 
 # -------------------- Database Initialization --------------------
 async def init_db():
@@ -162,17 +187,18 @@ async def insert_alerts(pool: AsyncConnectionPool, alerts):
     params_list = []
     for alert in alerts:
         ts_val = ensure_dt(alert.get("@timestamp"))
+        sanitized_alert = sanitize_for_json(alert)
         params_list.append((
             ts_val,
-            alert.get("rule"),
-            alert.get("user.name"),
-            alert.get("source.ip"),
-            alert.get("count", 1),
-            alert.get("severity"),
-            alert.get("attack.technique"),
-            Json(alert),
-            alert.get("score"),
-            alert.get("evidence")
+            sanitized_alert.get("rule"),
+            sanitized_alert.get("user.name"),
+            sanitized_alert.get("source.ip"),
+            sanitized_alert.get("count", 1),
+            sanitized_alert.get("severity"),
+            sanitized_alert.get("attack.technique"),
+            Json(sanitized_alert),
+            sanitized_alert.get("score"),
+            sanitized_alert.get("evidence")
         ))
 
     try:
@@ -230,7 +256,7 @@ async def insert_log(pool, log: dict):
                     "host": safe_get(log_data, 'host', 'hostname'),
                     "outcome": safe_get(log_data, 'event', 'outcome'),
                     "severity": safe_get(log_data, 'event', 'severity'),
-                    "category": safe_get(log_data, 'event', 'category'),
+                    "category": to_pg_text_array(safe_get(log_data, 'event', 'category')),
                     "action": safe_get(log_data, 'event', 'action'),
                     "reason": safe_get(log_data, 'event', 'reason'),
                     "http_method": safe_get(log_data, 'http', 'request', 'method'),
@@ -239,7 +265,7 @@ async def insert_log(pool, log: dict):
                     "user_agent": safe_get(log_data, 'user_agent', 'original'),
                     "attack_type": safe_get(log_data, 'attack', 'technique'),
                     "attack_confidence": safe_get(log_data, 'attack', 'confidence'),
-                    "labels": log_data.get('labels'),
+                    "labels": to_pg_text_array(log_data.get('labels')),
                     "message": log_data.get('message'),
                     "raw": Json(log_data),
                     "destination_ip": safe_get(log_data, 'destination', 'ip'),

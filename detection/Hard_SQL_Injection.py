@@ -13,8 +13,8 @@ from collector.db import init_db  # existing DB functions
 
 # --- CONFIGURATION (Added alert_dedupe_seconds) ---
 CONFIG = {
-    "rate_threshold": 3,
-    "window_minutes": 5,
+    "rate_threshold": 1,
+    "window_minutes": 1,
     "alert_dedupe_seconds": 300, # 5 minutes
 }
 
