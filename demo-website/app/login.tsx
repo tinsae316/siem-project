@@ -25,30 +25,85 @@ export default function LoginPage() {
   };
 
   return (
-    <div style={{ maxWidth: 400, margin: "auto", padding: 32 }}>
-      <h2>Login</h2>
-      <form onSubmit={handleSubmit}>
-        <div>
-          <label>Username</label>
-          <input
-            type="text"
-            required
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-        </div>
-        <div>
-          <label>Password</label>
-          <input
-            type="password"
-            required
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
-        <button type="submit">Login</button>
-      </form>
-      {message && <p>{message}</p>}
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "center",
+        alignItems: "center",
+        minHeight: "80vh",
+        padding: 16,
+        backgroundColor: "#f9f9f9",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 400,
+          width: "100%",
+          padding: 32,
+          background: "#fff",
+          borderRadius: 12,
+          boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+        }}
+      >
+        <h2 style={{ textAlign: "center", marginBottom: 24, color: "#111" }}>Login</h2>
+        <form
+          onSubmit={handleSubmit}
+          style={{ display: "flex", flexDirection: "column", gap: 16 }}
+        >
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <label style={{ marginBottom: 4, color: "#111" }}>Username</label>
+            <input
+              type="text"
+              required
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              style={{
+                padding: 10,
+                borderRadius: 8,
+                border: "1px solid #ccc",
+                outline: "none",
+                backgroundColor: "#fefefe", // white input background
+                color: "#111", // dark text
+              }}
+            />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <label style={{ marginBottom: 4, color: "#111" }}>Password</label>
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={{
+                padding: 10,
+                borderRadius: 8,
+                border: "1px solid #ccc",
+                outline: "none",
+                backgroundColor: "#fefefe",
+                color: "#111",
+              }}
+            />
+          </div>
+          <button
+            type="submit"
+            style={{
+              padding: 12,
+              borderRadius: 8,
+              background: "#0070f3",
+              color: "#fff",
+              fontWeight: 500,
+              border: "none",
+              cursor: "pointer",
+              transition: "background 0.2s",
+            }}
+          >
+            Login
+          </button>
+        </form>
+        {message && (
+          <p style={{ color: "red", marginTop: 12, textAlign: "center" }}>{message}</p>
+        )}
+      </div>
     </div>
   );
 }
