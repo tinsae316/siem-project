@@ -121,6 +121,7 @@ sudo -u postgres psql -c "ALTER USER user CREATEDB;" 2>/dev/null || print_warnin
 
 print_success "PostgreSQL database setup complete"
 
+
 # Install Python dependencies
 print_status "Installing Python dependencies..."
 if [ -f requirements.txt ]; then
@@ -200,6 +201,30 @@ if [ -d "$PROJECT_ROOT/detection" ]; then
     python3 Hard_XSS_Detection.py &
     DETECTION_PID3=$!
 
+    python3 Port_Scanning_Detection.py &
+    DETECTION_PID4=$!
+
+    python3 Suspicious_File_Activity.py &
+    DETECTION_PID5=$!
+
+    python3 Suspicious_Protocol_Misuse.py &
+    DETECTION_PID6=$!
+
+    python3 Hard_Suspicious_Admin.py &
+    DETECTION_PID7=$!
+
+    python3 Hard_Endpoint_Scan_Detection.py &
+    DETECTION_PID8=$!
+
+    python3 Firewall_Denied_Access.py &
+    DETECTION_PID9=$!
+
+    python3 Firewall_Allowed_Suddenly_Blocked.py &
+    DETECTION_PID10=$!
+
+    python3 DoS_DDoS_Detection.py &
+    DETECTION_PID11=$!
+
     popd > /dev/null
 else
     print_warning "Detection directory not found at $PROJECT_ROOT/detection — skipping detection scripts"
@@ -213,7 +238,7 @@ print_status "Service URLs:"
 echo "  📊 Dashboard: http://localhost:3002"
 echo "  🔍 Collector API: http://localhost:8000"
 echo "  📚 API Docs: http://localhost:8000/docs"
-echo "  🗄️  Database: localhost:5432"
+echo "  🗄  Database: localhost:5432"
 echo ""
 print_status "Process IDs:"
 echo "  Collector PID: $COLLECTOR_PID"
@@ -225,6 +250,7 @@ print_status "📝 Check the dashboard at http://localhost:3002 to view logs and
 echo ""
 print_status "To stop all services, run:"
 echo "  kill $COLLECTOR_PID $DASHBOARD_PID $DETECTION_PID1 $DETECTION_PID2 $DETECTION_PID3"
+
 
 # Save PIDs to file for easy cleanup
 echo "$COLLECTOR_PID $DASHBOARD_PID $DETECTION_PID1 $DETECTION_PID2 $DETECTION_PID3" > siem_pids.txt

@@ -25,7 +25,7 @@ export default function Sidebar() {
     }, 0); // 0.3s delay for effect
   };
 
-  const handleCreateAdmin = () => router.push("/signup");
+  const handleCreateAdmin = () => router.push("/create-admin");
 
   const menuItems = [
     { name: "Overview", path: "/dashboard", icon: <FiHome /> },

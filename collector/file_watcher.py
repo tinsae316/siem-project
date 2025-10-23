@@ -5,7 +5,7 @@ from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
 from collector.parser import parse_log_line
-from collector.db import insert_log
+from collector.enhanced_db import insert_log_with_evolution
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LOG_DIR = os.path.join(BASE_DIR, "test_logs")
@@ -42,7 +42,8 @@ async def log_consumer(pool, queue):
         try:
             parsed = parse_log_line(line)
             if parsed:
-                await insert_log(pool, parsed)
+                # Use enhanced insertion so new fields trigger schema evolution
+                await insert_log_with_evolution(parsed)
         except Exception as e:
             print(f"Error processing log line: {e}")
         finally:

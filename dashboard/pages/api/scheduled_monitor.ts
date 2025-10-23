@@ -42,6 +42,14 @@ export default async function handler(req: NextApiRequest, res: SSEApiResponse) 
         "Hard_Bruteforce_Detection.py",
         "Hard_SQL_Injection.py",
         "Hard_XSS_Detection.py",
+        "Port_Scanning_Detection.py",
+        "Suspicious_File_Activity.py",
+        "Suspicious_Protocol_Misuse.py",
+        "Hard_Suspicious_Admin.py",
+        "Firewall_Denied_Access.py",
+        "Firewall_Allowed_Suddenly_Blocked.py",
+        "DoS_DDoS_Detection.py",
+        "Hard_Endpoint_Scan_Detection.py",
     ];
 
     try {
@@ -94,6 +102,7 @@ export default async function handler(req: NextApiRequest, res: SSEApiResponse) 
             }
             lastRunning = current;
         }, 10000);
+
 
         // 📊 Send total alerts count every 10s
         let lastAlertCount = initialCount;

@@ -34,18 +34,19 @@ export default function Login() {
     e.preventDefault();
     setIsCheckingAuth(true);
     setError("");
-
+  
     try {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
       });
-
+  
       const data = await res.json();
-
+  
       if (res.ok) {
-        router.replace("/dashboard"); // Redirect immediately
+        // Keep the button disabled until redirect finishes
+        await router.replace("/dashboard");
         return;
       } else {
         setError(data.error || "Invalid username or password");
@@ -53,9 +54,10 @@ export default function Login() {
     } catch (err) {
       setError("An unexpected error occurred");
     } finally {
+      // Only re-enable button if login failed
       setIsCheckingAuth(false);
     }
-  };
+  };  
 
   return (
     <Layout>
